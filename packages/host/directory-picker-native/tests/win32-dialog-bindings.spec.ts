@@ -268,15 +268,11 @@ describe('the worker entry over a mocked process boundary', () => {
   const originalSend = process.send?.bind(process)
   const originalTitle = process.env.DSH_DIALOG_TITLE
 
-  const installBoundary = (): { posted: { kind: string; message?: string }[] } => {
-    const posted: { kind: string; message?: string }[] = []
+  const installBoundary = (): { posted: { kind: string; message?: string; hasCallback: boolean }[] } => {
+    const posted: { kind: string; message?: string; hasCallback: boolean }[] = []
     process.env.DSH_DIALOG_TITLE = 'Pick'
-    // Never invoke the post callback: it runs the worker's disconnect(), and
-    // this process is IPC-connected under the forks pool — severing vitest's
-    // own channel would kill the test worker. The real close lifecycle
-    // belongs to built-worker.e2e.ts.
-    ;(process as { send?: unknown }).send = (message: { kind: string }) => {
-      posted.push(message)
+    ;(process as { send?: unknown }).send = (message: { kind: string; message?: string }, callback?: unknown) => {
+      posted.push({ ...message, hasCallback: callback !== undefined })
       return true
     }
     return { posted }
@@ -310,8 +306,8 @@ describe('the worker entry over a mocked process boundary', () => {
     }))
     await import('../src/win32-dialog-worker.ts')
     expect(posted).toEqual([
-      { kind: 'showing', threadId: 11 },
-      { kind: 'done', path: 'C:\\from-worker' },
+      { kind: 'showing', threadId: 11, hasCallback: false },
+      { kind: 'done', path: 'C:\\from-worker', hasCallback: true },
     ])
   })
 
@@ -324,6 +320,7 @@ describe('the worker entry over a mocked process boundary', () => {
     expect(posted).toHaveLength(1)
     expect(posted[0]?.kind).toBe('error')
     expect(posted[0]?.message).toContain('no ole32 here')
+    expect(posted[0]?.hasCallback).toBe(true)
   })
 
   it('stringifies stackless and non-Error failures', async () => {

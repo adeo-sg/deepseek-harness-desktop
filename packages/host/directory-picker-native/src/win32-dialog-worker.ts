@@ -27,9 +27,18 @@ if (process.send === undefined) throw new Error('win32-dialog-worker must run as
 // node's internal `send` reads `this.connected`, so bind the receiver.
 const send = process.send.bind(process)
 
-const post = (message: Win32DialogWorkerMessage): void => {
-  // Flush before closing the channel; the process exits when the loop drains.
-  /* v8 ignore next 3 -- disconnect needs a live IPC channel the unit lane must not sever (built-worker.e2e.ts owns the real close path). */
+const post = (message: Win32DialogWorkerMessage, disconnect = false): void => {
+  // Keep the channel open after `showing`: the native dialog blocks this
+  // process until it can send the final `done` or `error` message. Close it
+  // only after that terminal message drains; the disconnect handler below
+  // still terminates the child when the parent abandons the pick.
+  if (!disconnect) {
+    send(message)
+    return
+  }
+  /* v8 ignore next 3 -- the callback needs a live child IPC channel; the
+     source-boundary spec must not disconnect Vitest's own process, while the
+     built-worker and Windows smoke own the real close lifecycle. */
   send(message, () => { if (process.connected) process.disconnect() })
 }
 
@@ -44,9 +53,9 @@ void (async () => {
     const path = runFolderDialog(bindings, title, (threadId) => {
       post({ kind: 'showing', threadId } satisfies Win32DialogWorkerMessage)
     })
-    post({ kind: 'done', path } satisfies Win32DialogWorkerMessage)
+    post({ kind: 'done', path } satisfies Win32DialogWorkerMessage, true)
   } catch (error: unknown) {
     const message = error instanceof Error ? (error.stack ?? error.message) : String(error)
-    post({ kind: 'error', message } satisfies Win32DialogWorkerMessage)
+    post({ kind: 'error', message } satisfies Win32DialogWorkerMessage, true)
   }
 })()
