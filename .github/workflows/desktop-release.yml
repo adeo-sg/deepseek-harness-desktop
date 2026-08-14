@@ -36,31 +36,31 @@ jobs:
             artifact: dsh-desktop-windows-x64
             installers: |
               apps/desktop/release/*.exe
-            app-dir: apps/desktop/release/win-unpacked/resources/app
-            smoke-cmd: pnpm exec electron apps/desktop/scripts/packaged-boot-probe.cjs
+            app-dir: release/win-unpacked/resources/app
+            smoke-cmd: pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
           - name: macos-x64
-            os: macos-13
+            os: macos-15-intel
             artifact: dsh-desktop-macos-x64
             installers: |
               apps/desktop/release/*.dmg
               apps/desktop/release/*.zip
-            app-dir: apps/desktop/release/mac/DeepSeek Harness.app/Contents/Resources/app
-            smoke-cmd: pnpm exec electron apps/desktop/scripts/packaged-boot-probe.cjs
+            app-dir: release/mac/DeepSeek Harness.app/Contents/Resources/app
+            smoke-cmd: pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
           - name: macos-arm64
             os: macos-latest
             artifact: dsh-desktop-macos-arm64
             installers: |
               apps/desktop/release/*.dmg
               apps/desktop/release/*.zip
-            app-dir: apps/desktop/release/mac/DeepSeek Harness.app/Contents/Resources/app
-            smoke-cmd: pnpm exec electron apps/desktop/scripts/packaged-boot-probe.cjs
+            app-dir: release/mac/DeepSeek Harness.app/Contents/Resources/app
+            smoke-cmd: pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
           - name: linux-x64
             os: ubuntu-latest
             artifact: dsh-desktop-linux-x64
             installers: |
               apps/desktop/release/*.AppImage
-            app-dir: apps/desktop/release/linux-unpacked/resources/app
-            smoke-cmd: xvfb-run -a pnpm exec electron apps/desktop/scripts/packaged-boot-probe.cjs
+            app-dir: release/linux-unpacked/resources/app
+            smoke-cmd: xvfb-run -a pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -90,14 +90,18 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb
 
-      # Packing unsigned builds: no codesigning identity is configured, and the
-      # installers ship via upload-artifact (and, on a version tag, the release
-      # job) — electron-builder must never attempt its own publish, which would
-      # require a GH_TOKEN the workflow deliberately does not have.
+      # Build the desktop shell itself (the workspace build does not cover
+      # apps/ — its tsdown config lives outside the workspace scan), then pack
+      # unsigned installers. electron-builder must never attempt its own
+      # publish: the installers ship via upload-artifact (and, on a version
+      # tag, the release job), and the workflow deliberately has no GH_TOKEN.
+      - name: Build desktop shell
+        run: pnpm --filter @deepseek-ai/dsh-desktop run build
+
       - name: Pack installers
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: pnpm --filter @deepseek-ai/dsh-desktop run dist -- --publish never
+        run: pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --publish never
 
       - name: Smoke packaged boot
         run: ${{ matrix.smoke-cmd }} "${{ matrix.app-dir }}" --no-sandbox
