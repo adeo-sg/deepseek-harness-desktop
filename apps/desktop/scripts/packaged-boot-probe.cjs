@@ -12,7 +12,7 @@
 // the first-run path that previously failed with UnknownPresetError when no
 // system-trusted preset root shipped.
 const { app } = require('electron')
-const { writeFileSync, rmSync } = require('node:fs')
+const { mkdirSync, rmSync, writeFileSync } = require('node:fs')
 const { join, resolve } = require('node:path')
 
 // The app dir may arrive relative to the caller's cwd (the workflow runs the
@@ -70,6 +70,17 @@ app.whenReady().then(async () => {
     }
     if (lines.length === 1) lines.push(String(cause))
   }
-  writeFileSync(resultFile, lines.join('\n'))
-  app.exit(ok ? 0 : 1)
+  // Echo the verdict so CI logs carry it even when the result write fails;
+  // the exit code is the smoke verdict either way.
+  console.log(lines.join('\n'))
+  try {
+    // The scratch home may not exist when the boot failed before creating it.
+    mkdirSync(home, { recursive: true })
+    writeFileSync(resultFile, lines.join('\n'))
+  } catch (error) {
+    // A lost result file costs only the diagnostic text, already echoed above.
+    console.error('probe: failed to write result file: ' + String(error))
+  } finally {
+    app.exit(ok ? 0 : 1)
+  }
 })
