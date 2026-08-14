@@ -21,6 +21,16 @@ files:
   - lib/**/*
   - build/icon.png
   - config/agent-presets/**/*
+  # Workspace links expose each package's development sources and compiler
+  # metadata to electron-builder. They are not reachable from the published
+  # lib entry points, but account for thousands of files and make NSIS spend
+  # most of its install time creating and scanning needless files.
+  - '!**/*.map'
+  - '!**/*.ts'
+  - '!**/*.tsx'
+  - '!**/*.mts'
+  - '!**/*.cts'
+  - '!**/*.tsbuildinfo'
   - '!src/**'
   - '!tests/**'
   - '!tsconfig*.json'
@@ -36,6 +46,11 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   perMachine: false
+  # Direct ZIP extraction avoids the temporary-directory copy used by the
+  # differential 7z payload. This app does not ship an electron-updater
+  # consumer, so installer speed is the useful trade-off for its first install.
+  differentialPackage: false
+  useZip: true
 mac:
   icon: build/icon.icns
   category: public.app-category.developer-tools
