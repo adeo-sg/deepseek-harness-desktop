@@ -13,9 +13,12 @@
 // system-trusted preset root shipped.
 const { app } = require('electron')
 const { writeFileSync, rmSync } = require('node:fs')
-const { join } = require('node:path')
+const { join, resolve } = require('node:path')
 
-const appDir = process.argv[2]
+// The app dir may arrive relative to the caller's cwd (the workflow runs the
+// probe through pnpm --filter, whose exec cwd is the desktop package); the
+// file:// import below requires an absolute path.
+const appDir = resolve(process.argv[2])
 const home = join(process.env.TEMP ?? '/tmp', 'dsh-packaged-boot-probe')
 const resultFile = join(home, 'probe-result.txt')
 

@@ -7,6 +7,11 @@
 # resolve its plugins. The packaged layout is resources/app/ as real files.
 appId: com.deepseek-ai.dsh-desktop
 productName: DeepSeek Harness
+# The package name is scoped (@deepseek-ai/dsh-desktop), which electron-builder
+# cannot turn into a safe executable name (Linux rejects the @ and / with
+# "executableName contains characters that cannot be safely used in file
+# paths"). Pin a plain name so every platform's binary and installer are stable.
+executableName: dsh-desktop
 directories:
   output: release
   buildResources: build
