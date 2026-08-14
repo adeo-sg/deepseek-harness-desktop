@@ -44,10 +44,6 @@ mac:
     - zip
 linux:
   icon: build/icon.png
-  # Linux package metadata must use a single filesystem-safe token. Keep the
-  # branded productName for UI and installers, but use this name for DEB/RPM
-  # package headers and the package-manager identity.
-  packageName: dsh-desktop
   category: Development
   synopsis: Desktop agent harness
   maintainer: DeepSeek AI <support@deepseek.ai>
@@ -57,6 +53,12 @@ linux:
     - deb
     - rpm
     - tar.gz
+deb:
+  # Package metadata must use a filesystem-safe token; the branded productName
+  # remains the application name shown by the desktop shell.
+  packageName: dsh-desktop
+rpm:
+  packageName: dsh-desktop
 # The static AppImage toolset carries native runtimes for every target
 # architecture. The legacy FUSE2 toolset falls back to an x64 runtime on arm64.
 toolsets:

@@ -304,8 +304,9 @@ describe('Desktop release workflow', () => {
 
   it('keeps package architecture out of the electron-builder targets', () => {
     const config: unknown = yaml.load(readFileSync(resolve(root, 'apps/desktop/electron-builder.yml'), 'utf8'))
-    if (!isRecord(config) || !isRecord(config.win) || !isRecord(config.mac) || !isRecord(config.linux)) {
-      throw new TypeError('desktop electron-builder config must define win, mac, and linux targets')
+    if (!isRecord(config) || !isRecord(config.win) || !isRecord(config.mac) || !isRecord(config.linux)
+      || !isRecord(config.deb) || !isRecord(config.rpm)) {
+      throw new TypeError('desktop electron-builder config must define win, mac, linux, deb, and rpm targets')
     }
 
     expect(config.win.target).toEqual(['nsis', 'zip'])
@@ -313,10 +314,11 @@ describe('Desktop release workflow', () => {
     expect(config.linux.target).toEqual(['AppImage', 'deb', 'rpm', 'tar.gz'])
     expect(config.artifactName).toBe('DeepSeek-Harness-${version}-${os}-${arch}.${ext}')
     expect(config.linux).toMatchObject({
-      packageName: 'dsh-desktop',
       category: 'Development',
       maintainer: 'DeepSeek AI <support@deepseek.ai>',
     })
+    expect(config.deb).toMatchObject({ packageName: 'dsh-desktop' })
+    expect(config.rpm).toMatchObject({ packageName: 'dsh-desktop' })
     expect(config.toolsets).toMatchObject({ appimage: '1.0.3' })
   })
 })
