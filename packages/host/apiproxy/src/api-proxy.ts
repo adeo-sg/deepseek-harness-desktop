@@ -114,6 +114,16 @@ import { canOpenNativePath, openNativePath, openNativeTextFile } from './native-
 const DEFAULT_MAX_MESSAGES = 50
 
 /**
+ * Hard cap on one history page's event count. Message-boundary pagination
+ * counts messages, but one message group can carry tens of thousands of
+ * stream chunks; a page that big stalls both processes when the transcript
+ * opens (serialize, IPC transfer, JSON.parse, fold). The budget keeps a page
+ * bounded while preserving whole-message groups — chunks ride their message's
+ * `groupStart`, so a page never cuts mid-message.
+ */
+const HISTORY_PAGE_MAX_EVENTS = 12_000
+
+/**
  * Non-model settings namespaces intentionally served to the Web client. The
  * plugin-owned entries (`agent-loop`, `bash`, `web-search-deepseek`) are the
  * host-plane sections the plugin configuration page edits; a namespace absent
@@ -297,13 +307,31 @@ function paginate(
   const window = beforeSeq === undefined ? [...events] : events.filter(event => event.seq < beforeSeq)
   let count = 0
   let cut = 0
+  // The page also respects the event budget: walk backwards over the
+  // ascending seqs, accumulating exactly the events each selected message
+  // group newly covers, and cut at the first group that exceeds either the
+  // message quota or the budget. The binary search keeps the walk O(n log n)
+  // even when group starts overlap (compaction shadowing).
+  const seqs = window.map(event => event.seq)
+  let coveredFrom = window.length
+  let coveredEvents = 0
   for (let i = window.length - 1; i >= 0; i--) {
     const event = window[i] as SessionEvent
     if (!MESSAGE_TYPES.has(event.type) || !isAppendSurfaceEvent(event)) continue
     count++
     const sources = (event as { sourceEventSeqs?: number[] }).sourceEventSeqs
     const groupStart = sources !== undefined && sources.length > 0 ? Math.min(event.seq, ...sources) : event.seq
-    if (count >= maxMessages) {
+    // First ascending index whose seq is >= groupStart (the new covered span).
+    let low = 0
+    let high = coveredFrom
+    while (low < high) {
+      const mid = (low + high) >> 1
+      if ((seqs[mid] as number) < groupStart) low = mid + 1
+      else high = mid
+    }
+    coveredEvents += coveredFrom - low
+    coveredFrom = low
+    if (count >= maxMessages || coveredEvents >= HISTORY_PAGE_MAX_EVENTS) {
       cut = groupStart
       break
     }

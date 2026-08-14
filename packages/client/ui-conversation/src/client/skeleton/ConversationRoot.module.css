@@ -55,6 +55,17 @@
   align-items: center;
   gap: 0;
   min-height: 32px;
+  /* The Electron frameless shell drags the window from this row (inert on the
+     web — regular browsers ignore -webkit-app-region); interactive children
+     opt back into pointer events below. Double-click here maximizes natively. */
+  -webkit-app-region: drag;
+}
+
+.titleRow button,
+.titleRow a,
+.titleRow input,
+.titleRow [role='tab'] {
+  -webkit-app-region: no-drag;
 }
 
 .titleCluster {

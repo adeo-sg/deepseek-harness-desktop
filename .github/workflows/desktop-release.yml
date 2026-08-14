@@ -1,0 +1,125 @@
+# Desktop shell release: build and package the Electron app on all three
+# platforms, smoke-test the packaged boot (install-and-run without extra
+# configuration), upload the installers as artifacts, and — on a version tag —
+# publish a GitHub Release with them.
+#
+# The packaged boot smoke runs apps/desktop/scripts/packaged-boot-probe.cjs
+# against each platform's packaged resources/app with a scratch DSH_HOME and
+# requires the boot to settle with the desktop carrier + bridge services —
+# the "clean machine first run" path, including the per-profile module
+# fallback heal.
+
+name: Desktop Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Package ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            artifact: dsh-desktop-windows-x64
+            installers: |
+              apps/desktop/release/*.exe
+            app-dir: apps/desktop/release/win-unpacked/resources/app
+            smoke-cmd: pnpm exec electron apps/desktop/scripts/packaged-boot-probe.cjs
+          - name: macos-x64
+            os: macos-13
+            artifact: dsh-desktop-macos-x64
+            installers: |
+              apps/desktop/release/*.dmg
+              apps/desktop/release/*.zip
+            app-dir: apps/desktop/release/mac/DeepSeek Harness.app/Contents/Resources/app
+            smoke-cmd: pnpm exec electron apps/desktop/scripts/packaged-boot-probe.cjs
+          - name: macos-arm64
+            os: macos-latest
+            artifact: dsh-desktop-macos-arm64
+            installers: |
+              apps/desktop/release/*.dmg
+              apps/desktop/release/*.zip
+            app-dir: apps/desktop/release/mac/DeepSeek Harness.app/Contents/Resources/app
+            smoke-cmd: pnpm exec electron apps/desktop/scripts/packaged-boot-probe.cjs
+          - name: linux-x64
+            os: ubuntu-latest
+            artifact: dsh-desktop-linux-x64
+            installers: |
+              apps/desktop/release/*.AppImage
+            app-dir: apps/desktop/release/linux-unpacked/resources/app
+            smoke-cmd: xvfb-run -a pnpm exec electron apps/desktop/scripts/packaged-boot-probe.cjs
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The workspace build emits lib/ for every package plus the web frontend
+      # dist; the packaged app embeds both.
+      - name: Build workspace
+        run: pnpm run build
+
+      # The packaged closure must equal apps/desktop's declared dependencies —
+      # electron-builder collects only those, so the Service Definition peers
+      # must all be declared (sync-pack-deps regenerates the list).
+      - name: Check packaged dependency closure
+        run: pnpm --filter @deepseek-ai/dsh-desktop run check:pack-deps
+
+      - name: Install xvfb (Linux smoke)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      # Packing unsigned builds: no codesigning identity is configured.
+      - name: Pack installers
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: pnpm --filter @deepseek-ai/dsh-desktop run dist
+
+      - name: Smoke packaged boot
+        run: ${{ matrix.smoke-cmd }} "${{ matrix.app-dir }}" --no-sandbox
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.installers }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**
+          generate_release_notes: true

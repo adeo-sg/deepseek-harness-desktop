@@ -12,6 +12,10 @@ The node half guards every entry under `/api` before bridging or upgrading (`src
 
 `/api/events.mux` and `/api/events.host` each accept a WebSocket upgrade and send only the corresponding `ServerRequest` text messages to the browser; the client sends no application data over these sockets. If either socket ends, the current connection generation fails and rebuilds both streams; readiness still requires both sockets to be open and the `host.describe` HTTP call to succeed. Host teardown terminates both sockets, aborts their sources, and waits for source cleanup before returning. Ordinary network GETs to these paths return 426 with no SSE fallback; `toFetchHandler`'s SSE codec serves only the isomorphic in-process carrier.
 
+## Desktop IPC carrier
+
+The Electron desktop shell (apps/desktop) carries the same wire over IPC instead of HTTP/WebSocket. The browser half's `apply` selects the carrier on the preload-exposed `window.desktopBridge`: present → [`IpcApiClient`](src/client/ipc-api-client.ts) (an `AbstractApiClient` subclass whose `doFetch` and stream openers ride the bridge) plus `createIpcConnectionRpc`; `?fixture` → the fixture; otherwise the WebSocket `WebApiClient`. The `./desktop` node-half entry ([`src/desktop.ts`](src/desktop.ts)) provides the `desktopBridge` host service — the unary/respond fetch handler built from the web node half's `HostConnectionService.createSharedFetchHandler` over the shared [`createApiGatewayFetch`](src/api-gateway.ts) (privileged pinning included), plus the `api.events.mux`/`host` openers — which the main process wires to `ipcMain` and `webContents` event pumps. The `/api` route and WebSocket registrations of the web node half stay mounted over the desktop carrier but are inert: IPC is the only surface. The desktop shell normalizes renderer requests to the loopback authority, the desktop analogue of the same-origin loopback page the fence grants.
+
 ## Model Experience
 
 None, as the wire consumer layer moves already-composed messages between browser and host; nothing here reaches a model request.

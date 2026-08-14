@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-14-desktop-frameless-window-chrome.md
+2026-08-14-desktop-frameless-window-chrome.md: fdcc616071910c89de8b89e74fe1d741d4222b31
+2026-08-14-desktop-frameless-window-chrome.zh.md: c5d7ab37c89e52a7ba2277fde2829429adbae3ee

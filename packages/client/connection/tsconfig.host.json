@@ -6,12 +6,15 @@
     "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
   },
   "files": [
+    "src/api-gateway.ts",
     "src/api-path.ts",
     "src/api-request-trust.ts",
+    "src/desktop.ts",
     "src/http-bridge.ts",
     "src/index.ts",
     "src/invariant.ts",
     "src/loopback-hostname.ts",
+    "src/privileged-methods.ts",
     "src/rpc-host.ts",
     "src/rpc.ts",
     "src/websocket-downlink.ts"

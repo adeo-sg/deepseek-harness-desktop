@@ -38,3 +38,8 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+
+# Electron desktop shell packaging output
+apps/desktop/release/
+apps/desktop/build/
+apps/desktop/node_modules/

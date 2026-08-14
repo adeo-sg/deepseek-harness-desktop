@@ -740,6 +740,20 @@
         "@deepseek-ai/.+"
       ]
     },
+    "apps/desktop": {
+      "entry": [
+        "tests/**/*.spec.ts",
+        "src/main.ts",
+        "src/preload/index.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@deepseek-ai/.+"
+      ]
+    },
     "packages/client/modules": {
       "entry": [
         "tests/**/*.spec.ts"
@@ -779,6 +793,11 @@
       ]
     },
     "packages/bundle/web-app": {
+      "ignoreDependencies": [
+        "@deepseek-ai/.+"
+      ]
+    },
+    "packages/bundle/desktop-app": {
       "ignoreDependencies": [
         "@deepseek-ai/.+"
       ]

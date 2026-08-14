@@ -1,0 +1,57 @@
+/* Custom window controls for the frameless Electron shell. Tokens only;
+   -webkit-app-region rules are inert on the web and enable the drag region. */
+
+.cluster {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  /* The Session header row is the window drag region; this cluster and its
+     buttons must stay clickable (inert on the web). */
+  -webkit-app-region: no-drag;
+}
+
+.button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.button:hover,
+.button:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Close follows the platform convention: a danger-tinted hover. */
+.close:hover,
+.close:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+}
+
+.glyph {
+  display: block;
+  width: 10px;
+  height: 10px;
+}
+
+/* Floating fallback: pinned to the window's top-right while the Session
+   header is hidden (no session, or a blank one). The strip is the drag
+   region; the cluster inside opts back into pointer events. */
+.floating {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  height: 44px; /* matches the Session header row: 12px pad + 32px row */
+  padding-right: 28px; /* matches the header's right padding */
+  -webkit-app-region: drag;
+}

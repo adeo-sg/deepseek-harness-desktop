@@ -1,0 +1,49 @@
+# electron-builder configuration for the DeepSeek Harness desktop shell.
+# Icons are generated from the project's own DeepSeek mark (apps/web/public/favicon.svg)
+# by `pnpm --filter @deepseek-ai/dsh-desktop run generate-icons` into build/.
+# asar is OFF: the harness host heals its per-profile module fallback with
+# junctions/symlinks that must point at REAL directories, and an asar archive
+# is a file, not a directory — an asar-layout profile boot would fail to
+# resolve its plugins. The packaged layout is resources/app/ as real files.
+appId: com.deepseek-ai.dsh-desktop
+productName: DeepSeek Harness
+directories:
+  output: release
+  buildResources: build
+files:
+  - lib/**/*
+  - build/icon.png
+  - config/agent-presets/**/*
+  - '!src/**'
+  - '!tests/**'
+  - '!tsconfig*.json'
+  - '!electron-builder.yml'
+  - '!release/**'
+asar: false
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+mac:
+  icon: build/icon.icns
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+linux:
+  icon: build/icon.png
+  target:
+    - target: AppImage
+      arch:
+        - x64
+electronLanguages:
+  - en-US
+  - zh-CN
+npmRebuild: false

@@ -1,0 +1,189 @@
+/**
+ * IPC wiring: the rpc handler normalizes renderer requests to the loopback
+ * authority (the desktop analogue of the /api loopback fence), forwards
+ * unary/respond through the bridge, and pumps the downlink streams per
+ * subscription.
+ */
+
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
+import type { DesktopBridgeHost } from '../src/bridge-types.ts'
+import { IPC_CHANNELS } from '../src/bridge-types.ts'
+
+const handlers = new Map<string, (...args: unknown[]) => unknown>()
+const listeners = new Map<string, ((...args: unknown[]) => void)[]>()
+
+vi.mock('electron', () => ({
+  ipcMain: {
+    handle: (channel: string, handler: (...args: unknown[]) => unknown) => {
+      handlers.set(channel, handler)
+    },
+    on: (channel: string, listener: (...args: unknown[]) => void) => {
+      listeners.set(channel, [...(listeners.get(channel) ?? []), listener])
+    },
+  },
+  BrowserWindow: {
+    fromWebContents: (webContents: unknown) => (webContents as { win?: unknown }).win ?? null,
+  },
+}))
+
+import { registerIpc, registerWindowIpc } from '../src/ipc.ts'
+
+function bridgeWith(fetch: (request: Request) => Promise<Response>): DesktopBridgeHost {
+  return {
+    fetch,
+    openMux: vi.fn(),
+    openHost: vi.fn(),
+  }
+}
+
+const JSON_HEADERS: [string, string][] = [['content-type', 'application/json']]
+
+beforeEach(() => {
+  handlers.clear()
+  listeners.clear()
+})
+
+describe('registerIpc', () => {
+  it('normalizes unary requests to the loopback authority and forwards them', async () => {
+    const bridge = bridgeWith(async (request: Request) => {
+      expect(request.url).toBe('http://127.0.0.1/api/session.list')
+      expect(request.headers.get('host')).toBe('127.0.0.1')
+      return new Response('{"type":"server-response","rpcId":"r1","result":{"ok":true,"value":{"items":[]}}}', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    registerIpc(bridge)
+    const rpc = handlers.get(IPC_CHANNELS.rpc) as (event: unknown, payload: unknown) => Promise<unknown>
+    const result = await rpc({}, {
+      id: 'req_1',
+      url: 'app://dsh/api/session.list',
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{"type":"client-request","rpcId":"r1","method":"session.list","payload":{}}',
+    }) as { status: number; headers: [string, string][]; body: string }
+    expect(result.status).toBe(200)
+    expect(result.headers).toEqual(JSON_HEADERS)
+    expect(JSON.parse(result.body)).toMatchObject({ rpcId: 'r1' })
+  })
+
+  it('pumps mux frames and sends the stream-end marker after the generator finishes', async () => {
+    const sent: { channel: string; payload: unknown }[] = []
+    const destroyed = vi.fn()
+    const wc = {
+      isDestroyed: () => false,
+      send: (channel: string, payload: unknown) => { sent.push({ channel, payload }) },
+      once: (event: string, callback: () => void) => { if (event === 'destroyed') destroyed.mockImplementation(callback) },
+      off: () => {},
+    }
+    const bridge: DesktopBridgeHost = {
+      fetch: async () => new Response(null, { status: 404 }),
+      openMux: vi.fn(() => (async function* () {
+        yield { rpcId: 'm1', payload: { type: 'session/subscribed', sessionId: 's1', lastSeq: 1 } }
+      })()),
+      openHost: vi.fn(),
+    }
+    registerIpc(bridge)
+    const subscribe = handlers.get(IPC_CHANNELS.subscribe) as (event: unknown, payload: unknown) => Promise<unknown>
+    await subscribe({ sender: wc }, { stream: 'mux', subId: 'sub_1' })
+    // The pump runs asynchronously; wait for the stream-end marker.
+    await vi.waitFor(() => {
+      expect(sent.some(entry => entry.channel === IPC_CHANNELS.streamEnd)).toBe(true)
+    })
+    const frame = sent.find(entry => entry.channel === IPC_CHANNELS.frame)
+    expect(frame?.payload).toMatchObject({ subId: 'sub_1', frame: { type: 'server-request', rpcId: 'm1', method: 'session/subscribed' } })
+  })
+
+  it('aborts a pump on unsubscribe', async () => {
+    const observedSignals: AbortSignal[] = []
+    const openMux = vi.fn((signal: AbortSignal) => {
+      observedSignals.push(signal)
+      return (async function* () {
+        while (!signal.aborted) {
+          await new Promise(resolve => setTimeout(resolve, 5))
+        }
+      })()
+    })
+    const bridge: DesktopBridgeHost = {
+      fetch: async () => new Response(null, { status: 404 }),
+      openMux: openMux as never,
+      openHost: vi.fn(),
+    }
+    registerIpc(bridge)
+    const wc = { isDestroyed: () => false, send: () => {}, once: () => {}, off: () => {} }
+    const subscribe = handlers.get(IPC_CHANNELS.subscribe) as (event: unknown, payload: unknown) => Promise<unknown>
+    await subscribe({ sender: wc }, { stream: 'mux', subId: 'sub_2' })
+    expect(observedSignals[0]?.aborted).toBe(false)
+    const unsubscribe = listeners.get(IPC_CHANNELS.unsubscribe)?.[0]
+    expect(unsubscribe).toBeDefined()
+    // Electron listeners receive (event, ...args); the mock hands them through.
+    unsubscribe?.({}, 'sub_2')
+    await vi.waitFor(() => {
+      expect(observedSignals[0]?.aborted).toBe(true)
+    })
+  })
+})
+
+describe('registerWindowIpc', () => {
+  /** The fake BrowserWindow action surface, every member a mock. */
+  type WinMock = {
+    minimize: Mock<() => void>
+    maximize: Mock<() => void>
+    unmaximize: Mock<() => void>
+    isMaximized: Mock<() => boolean>
+    close: Mock<() => void>
+  }
+
+  /** A fake BrowserWindow discoverable from a fake webContents via the electron mock. */
+  function windowWith(over: Partial<WinMock> = {}): { win: WinMock; wc: { win: unknown } } {
+    const win: WinMock = {
+      minimize: vi.fn(),
+      maximize: vi.fn(),
+      unmaximize: vi.fn(),
+      isMaximized: vi.fn(() => false),
+      close: vi.fn(),
+      ...over,
+    }
+    return { win, wc: { win } }
+  }
+
+  beforeEach(() => {
+    handlers.clear()
+    listeners.clear()
+    registerWindowIpc()
+  })
+
+  it('minimizes, toggles maximize, and closes the sender window', () => {
+    const { win, wc } = windowWith()
+    const action = listeners.get(IPC_CHANNELS.windowAction)?.[0]
+    expect(action).toBeDefined()
+    action?.({ sender: wc }, 'minimize')
+    expect(win.minimize).toHaveBeenCalledTimes(1)
+    action?.({ sender: wc }, 'toggle-maximize')
+    expect(win.maximize).toHaveBeenCalledTimes(1)
+    expect(win.unmaximize).not.toHaveBeenCalled()
+    action?.({ sender: wc }, 'close')
+    expect(win.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('restores a maximized window on toggle', () => {
+    const { win, wc } = windowWith({ isMaximized: vi.fn(() => true) })
+    const action = listeners.get(IPC_CHANNELS.windowAction)?.[0]
+    action?.({ sender: wc }, 'toggle-maximize')
+    expect(win.unmaximize).toHaveBeenCalledTimes(1)
+    expect(win.maximize).not.toHaveBeenCalled()
+  })
+
+  it('answers the window-state query from the sender window', async () => {
+    const { wc } = windowWith()
+    const state = handlers.get(IPC_CHANNELS.windowState) as (event: unknown) => unknown
+    expect(await state({ sender: wc })).toEqual({ maximized: false })
+  })
+
+  it('ignores actions and state from a webContents with no window', async () => {
+    const action = listeners.get(IPC_CHANNELS.windowAction)?.[0]
+    expect(() => action?.({ sender: {} }, 'close')).not.toThrow()
+    const state = handlers.get(IPC_CHANNELS.windowState) as (event: unknown) => unknown
+    expect(await state({ sender: {} })).toEqual({ maximized: false })
+  })
+})

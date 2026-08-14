@@ -12,6 +12,10 @@ node 半侧在桥接或 upgrade 前守卫 `/api` 下的每个入口（`src/api-r
 
 `/api/events.mux` 与 `/api/events.host` 各接受一条 WebSocket upgrade，并只向浏览器发送对应的 `ServerRequest` 文本消息；客户端不会在这些 socket 上发送业务数据。任一 socket 结束都会使当前 connection generation 失败并重建两条流，连接就绪仍要求两条 socket 均已打开且 `host.describe` HTTP 调用成功。Host teardown 会终止两条 socket、中止各自的 source，并等待 source 清理完成后再返回。普通网络 GET 这些路径会返回 426，不保留 SSE（Server-Sent Events）回退；`toFetchHandler` 的 SSE 编解码只服务进程内同构载体。
 
+## 桌面 IPC 载体
+
+Electron 桌面壳层（apps/desktop）以 IPC 而非 HTTP/WebSocket 承载同一条线路。浏览器半的 `apply` 依据 preload 暴露的 `window.desktopBridge` 选择载体：存在 → [`IpcApiClient`](src/client/ipc-api-client.ts)（`AbstractApiClient` 子类，其 `doFetch` 与流开启器都走 bridge）外加 `createIpcConnectionRpc`；`?fixture` → fixture；否则为 WebSocket 版 `WebApiClient`。`./desktop` 节点半入口（[`src/desktop.ts`](src/desktop.ts)）提供 `desktopBridge` host 服务——由 web 节点半的 `HostConnectionService.createSharedFetchHandler` 叠在共享的 [`createApiGatewayFetch`](src/api-gateway.ts)（含特权方法钉死）之上构建的 unary/respond fetch handler，外加 `api.events.mux`/`host` 开启器——主进程再把它接到 `ipcMain` 与 `webContents` 事件泵。web 节点半的 `/api` route 与 WebSocket 注册仍挂在桌面载体上但保持惰性：IPC 是唯一表面。桌面壳层把渲染进程请求归一化到回环权威，这正是栅栏授予同源回环页面的信任的桌面等价物。
+
 ## 模型体验
 
 无。协议消费层只在浏览器与主机之间搬运已经组合好的消息；这里没有任何内容进入模型请求。

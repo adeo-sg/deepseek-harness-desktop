@@ -263,10 +263,30 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
       const decoder = createZstdFrameDecoder()
       const plaintexts: Buffer[] = []
       // The decoder yields views into a reused buffer; copy each frame's
-      // plaintext immediately so a later concat cannot read overwritten memory.
-      for (const plaintext of decoder.decode(buffer, frames)) {
-        signal?.throwIfAborted()
-        plaintexts.push(Buffer.from(plaintext))
+      // plaintext immediately so a later concat cannot read overwritten
+      // memory. A large log holds tens of thousands of frames — decode in
+      // slices and yield the event loop between slices (same cadence as
+      // readZstdPrefix) so one cold read cannot stall the host process.
+      const iterator = decoder.decode(buffer, frames)[Symbol.iterator]()
+      let decoded = 0
+      let yieldDeadline = performance.now() + ZSTD_DECODE_YIELD_INTERVAL_MS
+      try {
+        for (;;) {
+          const { value, done } = iterator.next()
+          if (done) break
+          signal?.throwIfAborted()
+          plaintexts.push(Buffer.from(value))
+          decoded += 1
+          if (performance.now() >= yieldDeadline) {
+            await scheduler.yield()
+            signal?.throwIfAborted()
+            yieldDeadline = performance.now() + ZSTD_DECODE_YIELD_INTERVAL_MS
+          }
+        }
+      } finally {
+        // Abort path: the generator's own finally closes the decoder only
+        // when iteration completes or return() is called.
+        if (decoded < frames.length) iterator.return?.()
       }
       content = Buffer.concat(plaintexts).toString('utf8')
     } else {

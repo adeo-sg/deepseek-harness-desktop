@@ -83,6 +83,7 @@
     "apps/web/tests/workflow-run.e2e.ts",
     "apps/web/stress-tests/reasoning-chunks.stress.ts",
     "apps/cli/tests/**/*.ts",
+    "apps/desktop/tests/**/*.ts",
     "examples/*/src/**/*.ts",
     "examples/*/start.ts",
     "examples/*/tests/**/*.ts",
@@ -242,6 +243,7 @@
     { "path": "./packages/bundle/base" },
     { "path": "./packages/bundle/headless" },
     { "path": "./packages/bundle/web-app" },
+    { "path": "./packages/bundle/desktop-app" },
     { "path": "./packages/boot/app-boot" },
     { "path": "./packages/boot/cmdline" },
     { "path": "./packages/sdk/server" },
@@ -288,11 +290,13 @@
     { "path": "./packages/host/frontend-static" },
     { "path": "./packages/host/plugin-inventory" },
     { "path": "./packages/host/webserver" },
+    { "path": "./packages/host/desktop-carrier" },
     { "path": "./packages/sdk/client" },
     { "path": "./packages/sdk/protocol" },
     { "path": "./packages/lsp/lsp" },
     { "path": "./packages/lsp/lsp-stdio" },
     { "path": "./packages/lsp/tool-lsp" },
-    { "path": "./apps/cli" }
+    { "path": "./apps/cli" },
+    { "path": "./apps/desktop" }
   ]
 }
