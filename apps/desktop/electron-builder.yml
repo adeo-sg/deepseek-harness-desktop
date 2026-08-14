@@ -44,6 +44,10 @@ mac:
     - zip
 linux:
   icon: build/icon.png
+  # Linux package metadata must use a single filesystem-safe token. Keep the
+  # branded productName for UI and installers, but use this name for DEB/RPM
+  # package headers and the package-manager identity.
+  packageName: dsh-desktop
   category: Development
   synopsis: Desktop agent harness
   maintainer: DeepSeek AI <support@deepseek.ai>

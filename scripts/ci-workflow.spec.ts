@@ -257,7 +257,6 @@ describe('Desktop release workflow', () => {
       ['windows-arm64', '--win --arm64'],
       ['macos-x64', '--mac --x64'],
       ['macos-arm64', '--mac --arm64'],
-      ['macos-universal', '--mac --universal'],
       ['linux-x64', '--linux --x64'],
       ['linux-arm64', '--linux --arm64'],
     ])
@@ -269,7 +268,6 @@ describe('Desktop release workflow', () => {
       ['windows-arm64', 'windows-11-arm'],
       ['macos-x64', 'macos-15-intel'],
       ['macos-arm64', 'macos-15'],
-      ['macos-universal', 'macos-15'],
       ['linux-x64', 'ubuntu-24.04'],
       ['linux-arm64', 'ubuntu-24.04-arm'],
     ])
@@ -282,14 +280,13 @@ describe('Desktop release workflow', () => {
     })).toEqual([
       'release/mac/dsh-desktop.app/Contents/Resources/app',
       'release/mac-arm64/dsh-desktop.app/Contents/Resources/app',
-      'release/mac-universal/dsh-desktop.app/Contents/Resources/app',
     ])
     const installerGlobs = entries.map((entry) => {
       if (!isRecord(entry)) throw new TypeError('desktop release matrix entries must be records')
       return String(entry.installers)
     })
-    for (const globs of installerGlobs.slice(0, 5)) expect(globs).toContain('*.zip')
-    for (const globs of installerGlobs.slice(5)) {
+    for (const globs of installerGlobs.slice(0, 4)) expect(globs).toContain('*.zip')
+    for (const globs of installerGlobs.slice(4)) {
       expect(globs).toContain('*.deb')
       expect(globs).toContain('*.rpm')
       expect(globs).toContain('*.tar.gz')
@@ -316,6 +313,7 @@ describe('Desktop release workflow', () => {
     expect(config.linux.target).toEqual(['AppImage', 'deb', 'rpm', 'tar.gz'])
     expect(config.artifactName).toBe('DeepSeek-Harness-${version}-${os}-${arch}.${ext}')
     expect(config.linux).toMatchObject({
+      packageName: 'dsh-desktop',
       category: 'Development',
       maintainer: 'DeepSeek AI <support@deepseek.ai>',
     })

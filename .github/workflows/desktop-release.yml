@@ -67,15 +67,6 @@ jobs:
               apps/desktop/release/*.zip
             app-dir: release/mac-arm64/dsh-desktop.app/Contents/Resources/app
             smoke-cmd: pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
-          - name: macos-universal
-            os: macos-15
-            artifact: dsh-desktop-macos-universal
-            builder-args: --mac --universal
-            installers: |
-              apps/desktop/release/*.dmg
-              apps/desktop/release/*.zip
-            app-dir: release/mac-universal/dsh-desktop.app/Contents/Resources/app
-            smoke-cmd: pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
           - name: linux-x64
             os: ubuntu-24.04
             artifact: dsh-desktop-linux-x64
