@@ -7,11 +7,13 @@
 # resolve its plugins. The packaged layout is resources/app/ as real files.
 appId: com.deepseek-ai.dsh-desktop
 productName: DeepSeek Harness
+copyright: Copyright (c) 2026 DeepSeek AI
 # The package name is scoped (@deepseek-ai/dsh-desktop), which electron-builder
 # cannot turn into a safe executable name (Linux rejects the @ and / with
 # "executableName contains characters that cannot be safely used in file
 # paths"). Pin a plain name so every platform's binary and installer are stable.
 executableName: dsh-desktop
+artifactName: 'DeepSeek-Harness-${version}-${os}-${arch}.${ext}'
 directories:
   output: release
   buildResources: build
@@ -27,17 +29,30 @@ files:
 asar: false
 win:
   icon: build/icon.ico
-  target: nsis
+  target:
+    - nsis
+    - zip
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   perMachine: false
 mac:
   icon: build/icon.icns
-  target: dmg
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip
 linux:
   icon: build/icon.png
-  target: AppImage
+  category: Development
+  synopsis: Desktop agent harness
+  maintainer: DeepSeek AI <support@deepseek.ai>
+  vendor: DeepSeek AI
+  target:
+    - AppImage
+    - deb
+    - rpm
+    - tar.gz
 electronLanguages:
   - en-US
   - zh-CN

@@ -1,13 +1,13 @@
-# Desktop shell release: build and package the Electron app on all three
-# platforms, smoke-test the packaged boot (install-and-run without extra
-# configuration), upload the installers as artifacts, and — on a version tag —
-# publish a GitHub Release with them.
+# Desktop shell release: build the Electron app on native runners for every
+# supported desktop OS and CPU architecture, produce installable and portable
+# distribution formats, smoke-test the packaged boot, upload the artifacts,
+# and — on a version tag — publish one verified GitHub Release.
 #
 # The packaged boot smoke runs apps/desktop/scripts/packaged-boot-probe.cjs
 # against each platform's packaged resources/app with a scratch DSH_HOME and
 # requires the boot to settle with the desktop carrier + bridge services —
 # the "clean machine first run" path, including the per-profile module
-# fallback heal.
+# fallback heal. The release job adds SHA-256 checksums beside the installers.
 
 name: Desktop Release
 
@@ -32,12 +32,22 @@ jobs:
       matrix:
         include:
           - name: windows-x64
-            os: windows-latest
+            os: windows-2025
             artifact: dsh-desktop-windows-x64
             builder-args: --win --x64
             installers: |
               apps/desktop/release/*.exe
+              apps/desktop/release/*.zip
             app-dir: release/win-unpacked/resources/app
+            smoke-cmd: pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
+          - name: windows-arm64
+            os: windows-11-arm
+            artifact: dsh-desktop-windows-arm64
+            builder-args: --win --arm64
+            installers: |
+              apps/desktop/release/*.exe
+              apps/desktop/release/*.zip
+            app-dir: release/win-arm64-unpacked/resources/app
             smoke-cmd: pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
           - name: macos-x64
             os: macos-15-intel
@@ -49,7 +59,7 @@ jobs:
             app-dir: release/mac/dsh-desktop.app/Contents/Resources/app
             smoke-cmd: pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
           - name: macos-arm64
-            os: macos-latest
+            os: macos-15
             artifact: dsh-desktop-macos-arm64
             builder-args: --mac --arm64
             installers: |
@@ -57,13 +67,36 @@ jobs:
               apps/desktop/release/*.zip
             app-dir: release/mac-arm64/dsh-desktop.app/Contents/Resources/app
             smoke-cmd: pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
+          - name: macos-universal
+            os: macos-15
+            artifact: dsh-desktop-macos-universal
+            builder-args: --mac --universal
+            installers: |
+              apps/desktop/release/*.dmg
+              apps/desktop/release/*.zip
+            app-dir: release/mac/dsh-desktop.app/Contents/Resources/app
+            smoke-cmd: pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
           - name: linux-x64
-            os: ubuntu-latest
+            os: ubuntu-24.04
             artifact: dsh-desktop-linux-x64
             builder-args: --linux --x64
             installers: |
               apps/desktop/release/*.AppImage
+              apps/desktop/release/*.deb
+              apps/desktop/release/*.rpm
+              apps/desktop/release/*.tar.gz
             app-dir: release/linux-unpacked/resources/app
+            smoke-cmd: xvfb-run -a pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+            artifact: dsh-desktop-linux-arm64
+            builder-args: --linux --arm64
+            installers: |
+              apps/desktop/release/*.AppImage
+              apps/desktop/release/*.deb
+              apps/desktop/release/*.rpm
+              apps/desktop/release/*.tar.gz
+            app-dir: release/linux-arm64-unpacked/resources/app
             smoke-cmd: xvfb-run -a pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
     runs-on: ${{ matrix.os }}
     steps:
@@ -118,6 +151,7 @@ jobs:
           path: |
             ${{ matrix.installers }}
           if-no-files-found: error
+          retention-days: 14
 
   release:
     name: Publish GitHub Release
@@ -132,7 +166,20 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Generate SHA-256 checksums
+        working-directory: artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | sort)
+          test "${#files[@]}" -gt 0
+          sha256sum -- "${files[@]}" > SHA256SUMS
+          cat SHA256SUMS
+
       - uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**
           generate_release_notes: true
+          fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}

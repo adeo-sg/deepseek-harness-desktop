@@ -236,14 +236,15 @@ describe('E2B e2e workflow', () => {
 })
 
 describe('Desktop release workflow', () => {
-  it('assigns one architecture to every package job before publishing the release', () => {
+  it('covers native OS and CPU targets before publishing the release', () => {
     const workflow = loadWorkflow('.github/workflows/desktop-release.yml')
     const packageJob = workflowJob(workflow, 'package')
     const releaseJob = workflowJob(workflow, 'release')
     if (!isRecord(packageJob.strategy)
       || !isRecord(packageJob.strategy.matrix)
       || !Array.isArray(packageJob.strategy.matrix.include)
-      || !Array.isArray(packageJob.steps)) {
+      || !Array.isArray(packageJob.steps)
+      || !Array.isArray(releaseJob.steps)) {
       throw new TypeError('desktop release package job must define matrix entries and steps')
     }
 
@@ -253,9 +254,24 @@ describe('Desktop release workflow', () => {
       return [entry.name, entry['builder-args']]
     })).toEqual([
       ['windows-x64', '--win --x64'],
+      ['windows-arm64', '--win --arm64'],
       ['macos-x64', '--mac --x64'],
       ['macos-arm64', '--mac --arm64'],
+      ['macos-universal', '--mac --universal'],
       ['linux-x64', '--linux --x64'],
+      ['linux-arm64', '--linux --arm64'],
+    ])
+    expect(entries.map((entry) => {
+      if (!isRecord(entry)) throw new TypeError('desktop release matrix entries must be records')
+      return [entry.name, entry.os]
+    })).toEqual([
+      ['windows-x64', 'windows-2025'],
+      ['windows-arm64', 'windows-11-arm'],
+      ['macos-x64', 'macos-15-intel'],
+      ['macos-arm64', 'macos-15'],
+      ['macos-universal', 'macos-15'],
+      ['linux-x64', 'ubuntu-24.04'],
+      ['linux-arm64', 'ubuntu-24.04-arm'],
     ])
 
     const pack = packageJob.steps.filter(isRecord).find(step => step.name === 'Pack installers')
@@ -266,7 +282,22 @@ describe('Desktop release workflow', () => {
     })).toEqual([
       'release/mac/dsh-desktop.app/Contents/Resources/app',
       'release/mac-arm64/dsh-desktop.app/Contents/Resources/app',
+      'release/mac/dsh-desktop.app/Contents/Resources/app',
     ])
+    const installerGlobs = entries.map((entry) => {
+      if (!isRecord(entry)) throw new TypeError('desktop release matrix entries must be records')
+      return String(entry.installers)
+    })
+    for (const globs of installerGlobs.slice(0, 5)) expect(globs).toContain('*.zip')
+    for (const globs of installerGlobs.slice(5)) {
+      expect(globs).toContain('*.deb')
+      expect(globs).toContain('*.rpm')
+      expect(globs).toContain('*.tar.gz')
+    }
+    const checksum = releaseJob.steps.filter(isRecord).find(step => step.name === 'Generate SHA-256 checksums')
+    expect(checksum?.run).toContain('sha256sum')
+    expect(JSON.stringify(releaseJob)).toContain('fail_on_unmatched_files')
+    expect(JSON.stringify(releaseJob)).toContain('prerelease')
     expect(releaseJob).toMatchObject({
       if: "startsWith(github.ref, 'refs/tags/')",
       needs: 'package',
@@ -280,9 +311,14 @@ describe('Desktop release workflow', () => {
       throw new TypeError('desktop electron-builder config must define win, mac, and linux targets')
     }
 
-    expect(config.win.target).toBe('nsis')
-    expect(config.mac.target).toBe('dmg')
-    expect(config.linux.target).toBe('AppImage')
+    expect(config.win.target).toEqual(['nsis', 'zip'])
+    expect(config.mac.target).toEqual(['dmg', 'zip'])
+    expect(config.linux.target).toEqual(['AppImage', 'deb', 'rpm', 'tar.gz'])
+    expect(config.artifactName).toBe('DeepSeek-Harness-${version}-${os}-${arch}.${ext}')
+    expect(config.linux).toMatchObject({
+      category: 'Development',
+      maintainer: 'DeepSeek AI <support@deepseek.ai>',
+    })
   })
 })
 
