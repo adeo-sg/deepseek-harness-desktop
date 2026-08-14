@@ -260,6 +260,13 @@ describe('Desktop release workflow', () => {
 
     const pack = packageJob.steps.filter(isRecord).find(step => step.name === 'Pack installers')
     expect(pack?.run).toContain('${{ matrix.builder-args }}')
+    expect(entries.filter(entry => isRecord(entry) && String(entry.name).startsWith('macos-')).map((entry) => {
+      if (!isRecord(entry)) throw new TypeError('desktop release matrix entries must be records')
+      return entry['app-dir']
+    })).toEqual([
+      'release/mac/dsh-desktop.app/Contents/Resources/app',
+      'release/mac-arm64/dsh-desktop.app/Contents/Resources/app',
+    ])
     expect(releaseJob).toMatchObject({
       if: "startsWith(github.ref, 'refs/tags/')",
       needs: 'package',

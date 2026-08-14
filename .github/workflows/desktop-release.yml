@@ -46,7 +46,7 @@ jobs:
             installers: |
               apps/desktop/release/*.dmg
               apps/desktop/release/*.zip
-            app-dir: release/mac/DeepSeek Harness.app/Contents/Resources/app
+            app-dir: release/mac/dsh-desktop.app/Contents/Resources/app
             smoke-cmd: pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
           - name: macos-arm64
             os: macos-latest
@@ -55,7 +55,7 @@ jobs:
             installers: |
               apps/desktop/release/*.dmg
               apps/desktop/release/*.zip
-            app-dir: release/mac-arm64/DeepSeek Harness.app/Contents/Resources/app
+            app-dir: release/mac-arm64/dsh-desktop.app/Contents/Resources/app
             smoke-cmd: pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
           - name: linux-x64
             os: ubuntu-latest
