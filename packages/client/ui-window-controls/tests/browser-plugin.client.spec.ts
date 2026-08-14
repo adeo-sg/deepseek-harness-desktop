@@ -1,8 +1,8 @@
 /**
- * ui-window-controls plugin halves: the browser entry registers the inline and
- * floating clusters against the real SlotRegistry (with fiber teardown proving
- * removal — HMR safety), the inert node entry, and the invariant companion's
- * ownership reservation.
+ * ui-window-controls plugin halves: the browser entry registers the overlay
+ * cluster and header spacer against the real SlotRegistry (with fiber teardown
+ * proving removal — HMR safety), the inert node entry, and the invariant
+ * companion's ownership reservation.
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'

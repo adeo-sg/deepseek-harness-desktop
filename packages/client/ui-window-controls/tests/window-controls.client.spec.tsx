@@ -4,8 +4,8 @@ import { act, cleanup, render, screen } from '@testing-library/react'
 import type { DesktopWindowControls } from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import {
-  FloatingWindowControls, WindowControls,
-  type FloatingWindowControlsProps, type WindowControlsProps,
+  FloatingWindowControls, WindowControls, platformOf, resolvePlatform,
+  type FloatingWindowControlsProps, type WindowControlsPlatform, type WindowControlsProps,
 } from '../src/client/WindowControls.tsx'
 
 afterEach(() => {
@@ -45,11 +45,14 @@ function controls(over: Partial<DesktopWindowControls> = {}): MockSurface {
   }
 }
 
-function inlineProps(windowControls: DesktopWindowControls | undefined): WindowControlsProps {
-  return { windowControls } as unknown as WindowControlsProps
+function inlineProps(
+  windowControls: DesktopWindowControls | undefined,
+  platform: WindowControlsPlatform = 'win32',
+): WindowControlsProps {
+  return { windowControls, platform } as unknown as WindowControlsProps
 }
 
-/** The session-list facts the floating occupant's visibility selector reads. */
+/** Representative session-list facts supplied by the root slot runtime. */
 interface FloatingState {
   current?: SessionId | undefined
   byId?: Record<string, { blank: boolean }> | undefined
@@ -58,25 +61,69 @@ interface FloatingState {
 function floatingProps(
   state: FloatingState,
   windowControls: DesktopWindowControls | undefined,
+  platform: WindowControlsPlatform = 'win32',
 ): FloatingWindowControlsProps {
   const useSessions = <T,>(select: (snapshot: SessionListState) => T): T => select({
     current: state.current,
     byId: state.byId ?? {},
   } as unknown as SessionListState)
-  return { useSessions, windowControls } as unknown as FloatingWindowControlsProps
+  return { useSessions, windowControls, platform } as unknown as FloatingWindowControlsProps
 }
 
 const SESSION = 's1' as SessionId
 
-describe('WindowControls cluster', () => {
+describe('WindowControls header spacer', () => {
   it('renders nothing without the preload surface', () => {
     const { container } = render(<WindowControls {...inlineProps(undefined)} />)
     expect(container.innerHTML).toBe('')
   })
 
+  it('reserves the host platform footprint without mounting another control cluster', () => {
+    const { container } = render(<WindowControls {...inlineProps(controls(), 'linux')} />)
+    expect(screen.queryByRole('group', { name: '窗口控制' })).toBeNull()
+    expect(container.firstElementChild?.getAttribute('data-platform')).toBe('linux')
+    expect(container.firstElementChild?.getAttribute('aria-hidden')).toBe('true')
+  })
+})
+
+describe('resolvePlatform', () => {
+  it.each([
+    ['Win32', 'win32'],
+    ['Windows', 'win32'],
+    ['MacIntel', 'darwin'],
+    ['Darwin', 'darwin'],
+    ['Linux x86_64', 'linux'],
+    ['iPhone', 'other'],
+  ])('maps %s to %s', (raw, expected) => {
+    expect(resolvePlatform(raw)).toBe(expected)
+  })
+})
+
+describe('platformOf', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('resolves the convention set from the renderer platform', () => {
+    vi.stubGlobal('navigator', { platform: 'MacIntel' })
+    expect(platformOf()).toBe('darwin')
+  })
+
+  it('prefers the user-agent platform when Chromium exposes it', () => {
+    vi.stubGlobal('navigator', { platform: 'MacIntel', userAgentData: { platform: 'Linux' } })
+    expect(platformOf()).toBe('linux')
+  })
+
+  it('falls back to the default set when the navigator platform is absent', () => {
+    vi.stubGlobal('navigator', undefined)
+    expect(platformOf()).toBe('other')
+  })
+})
+
+describe('FloatingWindowControls', () => {
   it('renders the three controls and wires each action', async () => {
     const surface = controls()
-    render(<WindowControls {...inlineProps(surface)} />)
+    render(<FloatingWindowControls {...floatingProps({ current: undefined, byId: {} }, surface)} />)
     await screen.findByRole('button', { name: '最大化' })
     expect(screen.getByRole('group', { name: '窗口控制' })).toBeDefined()
     act(() => { screen.getByRole('button', { name: '最小化' }).click() })
@@ -91,11 +138,9 @@ describe('WindowControls cluster', () => {
 
   it('starts from the live maximize state and follows pushed flips', async () => {
     const surface = controls({ isMaximized: vi.fn(async () => true) })
-    render(<WindowControls {...inlineProps(surface)} />)
-    // Initial query resolves maximized → the restore glyph + label.
+    render(<FloatingWindowControls {...floatingProps({}, surface)} />)
     await screen.findByRole('button', { name: '还原' })
     expect(surface.isMaximized).toHaveBeenCalledTimes(1)
-    // A maximize → restore flip lands through the subscription.
     const listener = vi.mocked(surface.onMaximizedChanged).mock.calls[0]?.[0]
     expect(listener).toBeDefined()
     act(() => { listener!(false) })
@@ -106,52 +151,49 @@ describe('WindowControls cluster', () => {
 
   it('detaches the subscription on unmount', async () => {
     const surface = controls()
-    const { unmount } = render(<WindowControls {...inlineProps(surface)} />)
+    const { unmount } = render(<FloatingWindowControls {...floatingProps({}, surface)} />)
     await screen.findByRole('button', { name: '最大化' })
     unmount()
     expect(surface.detach).toHaveBeenCalledTimes(1)
   })
 
-  it('ignores a maximize query that resolves after unmount', async () => {
+  it('ignores a maximize query that resolves after unmount', () => {
     let resolve!: (state: boolean) => void
     const pending = new Promise<boolean>((done) => { resolve = done })
     const surface = controls({ isMaximized: vi.fn(() => pending) })
-    const { unmount } = render(<WindowControls {...inlineProps(surface)} />)
+    const { unmount } = render(<FloatingWindowControls {...floatingProps({}, surface)} />)
     unmount()
     expect(() => { act(() => { resolve(true) }) }).not.toThrow()
     expect(surface.detach).toHaveBeenCalledTimes(1)
   })
-})
 
-describe('FloatingWindowControls', () => {
-  it('renders the cluster while no session is current', async () => {
+  it.each([
+    ['without a current session', { current: undefined, byId: {} }],
+    ['for a blank session', { current: SESSION, byId: { [SESSION]: { blank: true } } }],
+    ['for a populated session', { current: SESSION, byId: { [SESSION]: { blank: false } } }],
+    ['while the current summary is unknown', { current: SESSION, byId: {} }],
+  ] satisfies [string, FloatingState][])('stays mounted %s', async (_label, state) => {
+    render(<FloatingWindowControls {...floatingProps(state, controls())} />)
+    await screen.findByRole('button', { name: '关闭' })
+  })
+
+  it('renders nothing without the preload surface', () => {
+    const { container } = render(<FloatingWindowControls {...floatingProps({}, undefined)} />)
+    expect(container.innerHTML).toBe('')
+  })
+
+  it('tags the frame anchor and cluster with the host platform convention', () => {
+    const { container } = render(<FloatingWindowControls {...floatingProps({}, controls(), 'darwin')} />)
+    expect(container.querySelector('[data-dsh-window-controls]')?.getAttribute('data-platform')).toBe('darwin')
+    expect(screen.getByRole('group', { name: '窗口控制' }).getAttribute('data-platform')).toBe('darwin')
+  })
+
+  it('is the only live control cluster when the Session-header spacer is present', () => {
     const surface = controls()
-    render(<FloatingWindowControls {...floatingProps({ current: undefined, byId: {} }, surface)} />)
-    await screen.findByRole('button', { name: '最小化' })
-    expect(screen.getByRole('button', { name: '关闭' })).toBeDefined()
-  })
-
-  it('renders the cluster while the current session is blank', async () => {
-    render(<FloatingWindowControls {...floatingProps({
-      current: SESSION,
-      byId: { [SESSION]: { blank: true } },
-    }, controls())} />)
-    await screen.findByRole('button', { name: '最小化' })
-  })
-
-  it('renders nothing once a real session header takes over', () => {
-    const { container } = render(<FloatingWindowControls {...floatingProps({
-      current: SESSION,
-      byId: { [SESSION]: { blank: false } },
-    }, controls())} />)
-    expect(container.innerHTML).toBe('')
-  })
-
-  it('renders nothing while the current session summary is unknown', () => {
-    const { container } = render(<FloatingWindowControls {...floatingProps({
-      current: SESSION,
-      byId: {},
-    }, controls())} />)
-    expect(container.innerHTML).toBe('')
+    render(<>
+      <WindowControls {...inlineProps(surface)} />
+      <FloatingWindowControls {...floatingProps({ current: SESSION }, surface)} />
+    </>)
+    expect(screen.getAllByRole('group', { name: '窗口控制' })).toHaveLength(1)
   })
 })

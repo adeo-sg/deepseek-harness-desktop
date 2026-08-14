@@ -1,8 +1,8 @@
 /**
  * Desktop window-controls plugin, browser half: contributes the custom
- * minimize/maximize/close cluster to the Session header utilities (right of
- * Session log) and a floating top-right fallback while that header is hidden.
- * The row lives in the dsh-desktop-app bundle patch only, so the web
+ * minimize/maximize/close cluster to the frame-wide shell overlay and reserves
+ * its footprint in the Session header utilities (right of Session log). The
+ * row lives in the dsh-desktop-app bundle patch only, so the web
  * composition never loads this plugin; the component still guards on the
  * preload surface's presence (fixture mode, accidental composition).
  */
@@ -12,10 +12,13 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { DesktopWindowControls } from '@deepseek-ai/dsh-client-connection/client'
-import { FloatingWindowControls, WindowControls, type WindowControlsInjected } from './WindowControls.tsx'
+import {
+  FloatingWindowControls, WindowControls, platformOf,
+  type WindowControlsInjected,
+} from './WindowControls.tsx'
 
 export type {
-  FloatingWindowControlsProps, WindowControlsInjected, WindowControlsProps,
+  FloatingWindowControlsProps, WindowControlsInjected, WindowControlsPlatform, WindowControlsProps,
 } from './WindowControls.tsx'
 
 /** Required services: the slot registry only (the bridge surface is environment data). */
@@ -28,14 +31,17 @@ function windowControlsOf(): DesktopWindowControls | undefined {
 }
 
 /**
- * Client plugin body: register the inline and floating control clusters. Both
- * target slots are declared by other entries, so each registration rides
+ * Client plugin body: register the header spacer and overlay control cluster.
+ * Both target slots are declared by other entries, so each registration rides
  * `slots.inject` on its declaration lifetime (late activation, redeclaration,
  * teardown with the caller's fiber).
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
-  const injectWindowControls = (): WindowControlsInjected => ({ windowControls: windowControlsOf() })
+  const injectWindowControls = (): WindowControlsInjected => ({
+    windowControls: windowControlsOf(),
+    platform: platformOf(),
+  })
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities',
     id: 'window-controls',

@@ -1,13 +1,12 @@
 /**
- * Custom window controls for the frameless Electron shell. Two registrations
- * render the same cluster: inline at the right end of the Session header
- * utilities (beside "Session log"), and — while that header is hidden (no
- * current session, or a blank one showing the hero) — as a floating strip in
- * the shell overlay. The cluster is pure presentation over the preload's
- * `windowControls` surface: one-shot actions, an initial maximize query, and
- * a maximize/restore subscription so the toggle glyph follows the real state
- * (keyboard snap, double-click drag region). Absent the bridge surface (web
- * composition, fixture mode) nothing renders.
+ * Custom window controls for the frameless Electron shell. The shell overlay
+ * owns the sole interactive cluster so details-column width cannot move it
+ * away from the window edge; the Session-header registration reserves the
+ * cluster's width beside "Session log". The cluster is pure presentation over
+ * the preload's `windowControls` surface: one-shot actions, an initial maximize
+ * query, and a maximize/restore subscription so the toggle glyph follows the
+ * real state (keyboard snap, double-click drag region). Absent the bridge
+ * surface (web composition, fixture mode) neither registration renders.
  */
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -16,10 +15,41 @@ import type { DesktopWindowControls } from '@deepseek-ai/dsh-client-connection/c
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './WindowControls.module.css'
 
+/** Which OS's window-control conventions the cluster draws. */
+export type WindowControlsPlatform = 'win32' | 'darwin' | 'linux' | 'other'
+
+/**
+ * Map a Chromium platform identifier to the supported window-control metrics.
+ * @param raw - the platform string, e.g. "Win32", "MacIntel", "Linux x86_64".
+ * @returns the convention set; unknown strings fall back to the default.
+ */
+export function resolvePlatform(raw: string): WindowControlsPlatform {
+  const platform = raw.toLowerCase()
+  if (platform === 'darwin' || platform.includes('mac')) return 'darwin'
+  if (platform === 'win32' || platform.startsWith('win')) return 'win32'
+  if (platform.includes('linux')) return 'linux'
+  return 'other'
+}
+
+/**
+ * Resolve the host OS's window-control convention set from Chromium's
+ * user-agent platform, falling back to `navigator.platform`.
+ * @returns the convention set; unknown or absent platforms fall back to the default.
+ */
+export function platformOf(): WindowControlsPlatform {
+  const navigatorLike = (globalThis as {
+    navigator?: { platform?: string; userAgentData?: { platform?: string } }
+  }).navigator
+  const raw = navigatorLike?.userAgentData?.platform ?? navigatorLike?.platform
+  return resolvePlatform(raw ?? '')
+}
+
 /** Business face the plugin injects: the preload's window surface, when present. */
 export interface WindowControlsInjected {
   /** The Electron preload surface; undefined in the browser composition. */
   windowControls: DesktopWindowControls | undefined
+  /** The host OS's window-control convention set (glyph size, placement). */
+  platform: WindowControlsPlatform
 }
 
 /** Full props of the inline Session-header utility occupant. */
@@ -32,7 +62,7 @@ export type FloatingWindowControlsProps =
   PropsRuntime<'shell.overlay'>
   & InjectFace<WindowControlsInjected>
 
-/** One glyph box; the 10x10 viewBox keeps the strokes metric-crisp at 10px. */
+/** One glyph box; platform metrics scale the shared 10-unit paths. */
 function Glyph(props: { children: ReactNode }): ReactNode {
   return (
     <svg className={css.glyph} viewBox="0 0 10 10" aria-hidden="true">
@@ -63,7 +93,7 @@ function RestoreGlyph(): ReactNode {
 
 /** Close glyph: an X. */
 function CloseGlyph(): ReactNode {
-  return <Glyph><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth="1" /></Glyph>
+  return <Glyph><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" strokeWidth="1" /></Glyph>
 }
 
 /**
@@ -72,23 +102,29 @@ function CloseGlyph(): ReactNode {
  * the bridge here is the one external read this component owns — window state
  * is window-global but only the controls consume it, so a store would be a
  * shared source with a single reader.
- * @param props - the bridge surface, or undefined outside the desktop shell.
- * @returns the cluster, or nothing when no surface exists.
+ * @param props - the bridge surface and host platform convention set.
+ * @returns the interactive control cluster.
  */
-function ControlsCluster(props: { controls: DesktopWindowControls | undefined }): ReactNode {
-  const { controls } = props
+function ControlsCluster(props: {
+  controls: DesktopWindowControls
+  platform: WindowControlsPlatform
+}): ReactNode {
+  const { controls, platform } = props
   const [maximized, setMaximized] = useState(false)
   useEffect(() => {
-    if (controls === undefined) return
     let alive = true
     void controls.isMaximized().then((state) => { if (alive) setMaximized(state) })
     const detach = controls.onMaximizedChanged(setMaximized)
     return () => { alive = false; detach() }
   }, [controls])
-  if (controls === undefined) return null
   const maximizeLabel = maximized ? '还原' : '最大化'
   return (
-    <div className={css.cluster} role="group" aria-label="窗口控制">
+    <div
+      className={css.cluster}
+      data-platform={platform}
+      role="group"
+      aria-label="窗口控制"
+    >
       <button type="button" className={css.button} aria-label="最小化" title="最小化" onClick={() => { controls.minimize() }}>
         <MinimizeGlyph />
       </button>
@@ -103,31 +139,28 @@ function ControlsCluster(props: { controls: DesktopWindowControls | undefined })
 }
 
 /**
- * The inline occupant of `conversation.session.header.utilities`: the cluster
- * sits at the right end of the Session header, after the Session-log utility.
+ * The inline occupant of `conversation.session.header.utilities`: reserves the
+ * platform cluster width after the Session-log utility while the sole live
+ * cluster stays anchored by `shell.overlay`.
  * @param props - session runtime share plus the injected window surface.
- * @returns the control cluster (rendered only inside the visible header).
+ * @returns the platform-sized spacer, or nothing without the preload surface.
  */
-export function WindowControls({ windowControls }: WindowControlsProps): ReactNode {
-  return <ControlsCluster controls={windowControls} />
+export function WindowControls({ windowControls, platform }: WindowControlsProps): ReactNode {
+  if (windowControls === undefined) return null
+  return <span className={css.inlineSpacer} data-platform={platform} aria-hidden="true" />
 }
 
 /**
- * The floating occupant of `shell.overlay`: shows the same cluster pinned to
- * the window's top-right exactly while the Session header is hidden (no
- * current session, or a blank one in the hero) — the window must stay
- * closable before the first message exists. Renders nothing once a real
- * session header takes over the top-right.
+ * The `shell.overlay` occupant: pins the sole control cluster to the window's
+ * top-right across hero, Session-header, and details-panel states.
  * @param props - root runtime share (global session list) plus the injected window surface.
- * @returns the floating cluster, or nothing while a header is visible.
+ * @returns the floating cluster, or nothing without the preload surface.
  */
-export function FloatingWindowControls({ useSessions, windowControls }: FloatingWindowControlsProps): ReactNode {
-  const headerHidden = useSessions(state =>
-    state.current === undefined || state.byId[state.current]?.blank === true)
-  if (!headerHidden) return null
+export function FloatingWindowControls({ windowControls, platform }: FloatingWindowControlsProps): ReactNode {
+  if (windowControls === undefined) return null
   return (
-    <div className={css.floating}>
-      <ControlsCluster controls={windowControls} />
+    <div className={css.floating} data-platform={platform} data-dsh-window-controls>
+      <ControlsCluster controls={windowControls} platform={platform} />
     </div>
   )
 }

@@ -27,27 +27,17 @@ files:
 asar: false
 win:
   icon: build/icon.ico
-  target:
-    - target: nsis
-      arch:
-        - x64
+  target: nsis
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   perMachine: false
 mac:
   icon: build/icon.icns
-  target:
-    - target: dmg
-      arch:
-        - x64
-        - arm64
+  target: dmg
 linux:
   icon: build/icon.png
-  target:
-    - target: AppImage
-      arch:
-        - x64
+  target: AppImage
 electronLanguages:
   - en-US
   - zh-CN

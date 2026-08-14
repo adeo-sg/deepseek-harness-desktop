@@ -235,6 +235,50 @@ describe('E2B e2e workflow', () => {
   })
 })
 
+describe('Desktop release workflow', () => {
+  it('assigns one architecture to every package job before publishing the release', () => {
+    const workflow = loadWorkflow('.github/workflows/desktop-release.yml')
+    const packageJob = workflowJob(workflow, 'package')
+    const releaseJob = workflowJob(workflow, 'release')
+    if (!isRecord(packageJob.strategy)
+      || !isRecord(packageJob.strategy.matrix)
+      || !Array.isArray(packageJob.strategy.matrix.include)
+      || !Array.isArray(packageJob.steps)) {
+      throw new TypeError('desktop release package job must define matrix entries and steps')
+    }
+
+    const entries = packageJob.strategy.matrix.include
+    expect(entries.map((entry) => {
+      if (!isRecord(entry)) throw new TypeError('desktop release matrix entries must be records')
+      return [entry.name, entry['builder-args']]
+    })).toEqual([
+      ['windows-x64', '--win --x64'],
+      ['macos-x64', '--mac --x64'],
+      ['macos-arm64', '--mac --arm64'],
+      ['linux-x64', '--linux --x64'],
+    ])
+
+    const pack = packageJob.steps.filter(isRecord).find(step => step.name === 'Pack installers')
+    expect(pack?.run).toContain('${{ matrix.builder-args }}')
+    expect(releaseJob).toMatchObject({
+      if: "startsWith(github.ref, 'refs/tags/')",
+      needs: 'package',
+      permissions: { contents: 'write' },
+    })
+  })
+
+  it('keeps package architecture out of the electron-builder targets', () => {
+    const config: unknown = yaml.load(readFileSync(resolve(root, 'apps/desktop/electron-builder.yml'), 'utf8'))
+    if (!isRecord(config) || !isRecord(config.win) || !isRecord(config.mac) || !isRecord(config.linux)) {
+      throw new TypeError('desktop electron-builder config must define win, mac, and linux targets')
+    }
+
+    expect(config.win.target).toBe('nsis')
+    expect(config.mac.target).toBe('dmg')
+    expect(config.linux.target).toBe('AppImage')
+  })
+})
+
 describe('Python release workflows', () => {
   it('keeps complete wheel validation separate from protected public publication', () => {
     const workflow = loadWorkflow('.github/workflows/python-release.yml')

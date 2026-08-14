@@ -34,6 +34,7 @@ jobs:
           - name: windows-x64
             os: windows-latest
             artifact: dsh-desktop-windows-x64
+            builder-args: --win --x64
             installers: |
               apps/desktop/release/*.exe
             app-dir: release/win-unpacked/resources/app
@@ -41,6 +42,7 @@ jobs:
           - name: macos-x64
             os: macos-15-intel
             artifact: dsh-desktop-macos-x64
+            builder-args: --mac --x64
             installers: |
               apps/desktop/release/*.dmg
               apps/desktop/release/*.zip
@@ -49,6 +51,7 @@ jobs:
           - name: macos-arm64
             os: macos-latest
             artifact: dsh-desktop-macos-arm64
+            builder-args: --mac --arm64
             installers: |
               apps/desktop/release/*.dmg
               apps/desktop/release/*.zip
@@ -57,6 +60,7 @@ jobs:
           - name: linux-x64
             os: ubuntu-latest
             artifact: dsh-desktop-linux-x64
+            builder-args: --linux --x64
             installers: |
               apps/desktop/release/*.AppImage
             app-dir: release/linux-unpacked/resources/app
@@ -101,7 +105,9 @@ jobs:
       - name: Pack installers
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --publish never
+        # The builder config owns package targets; the matrix owns architecture.
+        # This keeps each artifact and packaged-boot probe architecture-specific.
+        run: pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --publish never ${{ matrix.builder-args }}
 
       - name: Smoke packaged boot
         run: ${{ matrix.smoke-cmd }} "${{ matrix.app-dir }}" --no-sandbox
