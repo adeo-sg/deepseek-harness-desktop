@@ -26,6 +26,7 @@ interface ComWorld {
   showHr: number
   getResultHr: number
   getDisplayNameHr: number
+  decodeThrows: boolean
   hasThreadDpi: boolean
   /** Contexts `SetThreadDpiAwarenessContext` accepts; others return NULL. */
   supportedDpiContexts: number[]
@@ -44,7 +45,7 @@ interface ComWorld {
 
 function comWorld(overrides: Partial<ComWorld> = {}): ComWorld {
   return {
-    coInitHr: 0, coCreateHr: 0, showHr: 0, getResultHr: 0, getDisplayNameHr: 0,
+    coInitHr: 0, coCreateHr: 0, showHr: 0, getResultHr: 0, getDisplayNameHr: 0, decodeThrows: false,
     hasThreadDpi: true, supportedDpiContexts: [-4], enumThrows: false,
     path: 'C:\\选中\\directory',
     titles: [], options: [], dpiContexts: [], freed: [], released: [], posted: [],
@@ -127,25 +128,25 @@ function installFakeKoffi(world: ComWorld): void {
       proto: (declaration: string) => ({ declaration }),
       pointer: (type: unknown) => type,
       sizeof: (type: string) => { void type; return FAKE_POINTER_SIZE },
-      view: (value: unknown, len: number): ArrayBuffer => {
-        const bytes = Buffer.alloc(len)
-        bytes.write((value as FakePtr).text as string, 'utf16le')
-        return bytes.buffer
-      },
       register: (fn: (hwnd: unknown, lparam: unknown) => number) => { world.registered += 1; return { fn } },
       unregister: () => { world.unregistered += 1 },
-      decode: (value: unknown, offsetOrType: unknown): unknown => {
-        if (offsetOrType === 'str16') return (value as FakePtr).text
-        if (typeof offsetOrType === 'number') {
-          // Vtable slot read: offsets must be multiples of the fake width.
-          if (offsetOrType % FAKE_POINTER_SIZE !== 0) throw new Error(`vtable offset ${offsetOrType} is not pointer-aligned`)
-          const owner = (value as { owner: FakePtr }).owner
-          return { call: (args: unknown[]) => dispatch(owner, offsetOrType / FAKE_POINTER_SIZE, args) }
-        }
-        // decode(x, 'void *'): out-buffer read or vtable read.
-        if (outBuffers.has(value)) return outBuffers.get(value)
-        return { owner: value as FakePtr }
-      },
+      decode: Object.assign(
+        (value: unknown, offsetOrType: unknown): unknown => {
+          if (typeof offsetOrType === 'number') {
+            // Vtable slot read: offsets must be multiples of the fake width.
+            if (offsetOrType % FAKE_POINTER_SIZE !== 0) throw new Error(`vtable offset ${offsetOrType} is not pointer-aligned`)
+            const owner = (value as { owner: FakePtr }).owner
+            return { call: (args: unknown[]) => dispatch(owner, offsetOrType / FAKE_POINTER_SIZE, args) }
+          }
+          // decode(x, 'void *'): out-buffer read or vtable read.
+          if (outBuffers.has(value)) return outBuffers.get(value)
+          return { owner: value as FakePtr }
+        },
+        { string16: (value: unknown): string => {
+          if (world.decodeThrows) throw new Error('UTF-16 decoder refused the pointer')
+          return (value as FakePtr).text as string
+        } },
+      ),
       call: (fn: { call: (args: unknown[]) => number }, _proto: unknown, _self: unknown, ...args: unknown[]) => fn.call(args),
     },
   }))
@@ -238,6 +239,15 @@ describe('loadWin32DialogBindings over the fake COM world', () => {
     // The shell item is released even when its display name cannot be read.
     expect(nameWorld.released).toEqual(['item', 'dialog'])
     expect(nameWorld.freed).toHaveLength(0)
+  })
+
+  it('frees the shell string when UTF-16 decoding fails', async () => {
+    const world = comWorld({ decodeThrows: true })
+    installFakeKoffi(world)
+    const bindings = await (await loadBindingsModule()).loadWin32DialogBindings()
+    expect(() => runFolderDialog(bindings, 'Pick', vi.fn())).toThrow('UTF-16 decoder refused')
+    expect(world.freed).toHaveLength(1)
+    expect(world.released).toEqual(['item', 'dialog'])
   })
 })
 

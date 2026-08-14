@@ -15,30 +15,32 @@
 import type { Win32DialogBindings, Win32FolderDialog } from './win32-dialog-logic.ts'
 
 interface KoffiFunction { (...args: unknown[]): unknown }
+interface KoffiDecode {
+  (value: unknown, offsetOrType: unknown, type?: unknown): unknown
+  string16(value: unknown): string
+}
 interface KoffiLibrary { func(convention: string, name: string, result: string, args: string[]): KoffiFunction }
 interface Koffi {
   load(path: string): KoffiLibrary
   proto(declaration: string): unknown
   pointer(type: unknown): unknown
   call(pointer: unknown, proto: unknown, ...args: unknown[]): unknown
-  decode(value: unknown, offsetOrType: unknown, type?: unknown): unknown
+  decode: KoffiDecode
   register(fn: (...args: unknown[]) => unknown, type: unknown): unknown
   unregister(callback: unknown): void
   sizeof(type: string): number
-  view(ref: unknown, len: number): ArrayBuffer
 }
 
 /**
- * Read a NUL-terminated UTF-16 string at a native address. koffi's
- * `_Out_ void **` out-params surface a raw address, and
- * `koffi.decode(addr, 'str16')` would dereference it as a pointer — crash
- * on real Windows — so view the memory directly instead.
+ * Read a NUL-terminated UTF-16 string at a native address. The dedicated
+ * decoder copies the text without creating an external ArrayBuffer, which is
+ * required in Electron child processes where external buffers are disabled.
+ * @param koffi - the loaded Koffi runtime.
+ * @param address - the `PWSTR` returned by `IShellItem::GetDisplayName`.
+ * @returns the decoded filesystem path.
  */
 function readUtf16(koffi: Koffi, address: unknown): string {
-  const bytes = Buffer.from(koffi.view(address, 32768))
-  let end = 0
-  while (end + 1 < bytes.length && bytes[end] !== 0) end += 2
-  return bytes.toString('utf16le', 0, end)
+  return koffi.decode.string16(address)
 }
 
 const COINIT_APARTMENTTHREADED = 0x2
@@ -156,9 +158,11 @@ export async function loadWin32DialogBindings(): Promise<Win32DialogBindings> {
             const nameOut: unknown[] = [null]
             const gotName = method(item, SLOT_GET_DISPLAY_NAME, protoGetDisplayName)(SIGDN_FILESYSPATH, nameOut)
             if (gotName < 0) return { hr: gotName }
-            const path = readUtf16(koffi, nameOut[0])
-            coTaskMemFree(nameOut[0])
-            return { hr: gotName, path }
+            try {
+              return { hr: gotName, path: readUtf16(koffi, nameOut[0]) }
+            } finally {
+              coTaskMemFree(nameOut[0])
+            }
           } finally {
             method(item, SLOT_RELEASE, protoRelease)()
           }
