@@ -74,7 +74,7 @@ jobs:
             installers: |
               apps/desktop/release/*.dmg
               apps/desktop/release/*.zip
-            app-dir: release/mac/dsh-desktop.app/Contents/Resources/app
+            app-dir: release/mac-universal/dsh-desktop.app/Contents/Resources/app
             smoke-cmd: pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
           - name: linux-x64
             os: ubuntu-24.04

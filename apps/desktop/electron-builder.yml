@@ -53,6 +53,10 @@ linux:
     - deb
     - rpm
     - tar.gz
+# The static AppImage toolset carries native runtimes for every target
+# architecture. The legacy FUSE2 toolset falls back to an x64 runtime on arm64.
+toolsets:
+  appimage: '1.0.3'
 electronLanguages:
   - en-US
   - zh-CN

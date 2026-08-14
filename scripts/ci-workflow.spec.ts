@@ -282,7 +282,7 @@ describe('Desktop release workflow', () => {
     })).toEqual([
       'release/mac/dsh-desktop.app/Contents/Resources/app',
       'release/mac-arm64/dsh-desktop.app/Contents/Resources/app',
-      'release/mac/dsh-desktop.app/Contents/Resources/app',
+      'release/mac-universal/dsh-desktop.app/Contents/Resources/app',
     ])
     const installerGlobs = entries.map((entry) => {
       if (!isRecord(entry)) throw new TypeError('desktop release matrix entries must be records')
@@ -319,6 +319,7 @@ describe('Desktop release workflow', () => {
       category: 'Development',
       maintainer: 'DeepSeek AI <support@deepseek.ai>',
     })
+    expect(config.toolsets).toMatchObject({ appimage: '1.0.3' })
   })
 })
 
