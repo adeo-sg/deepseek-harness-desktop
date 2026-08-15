@@ -83,7 +83,7 @@ jobs:
         run: pnpm run verify:container
 
       - name: Package deployment assets
-        run: pnpm run release:pack-container -- --out dist/container --image-repository "ghcr.io/${GITHUB_REPOSITORY_OWNER}/deepseek-harness"
+        run: pnpm run release:pack-container --out dist/container --image-repository "ghcr.io/${GITHUB_REPOSITORY_OWNER}/deepseek-harness"
 
       - uses: docker/setup-qemu-action@v3
 

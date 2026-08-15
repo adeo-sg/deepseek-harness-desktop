@@ -123,7 +123,7 @@ function main(): void {
   const qemuIndex = releaseWorkflow.indexOf('docker/setup-qemu-action@v3')
   const buildxIndex = releaseWorkflow.indexOf('docker/setup-buildx-action@v3')
   assert(qemuIndex !== -1 && qemuIndex < buildxIndex, 'release workflow must register QEMU before the multi-platform Buildx builder')
-  assert(releaseWorkflow.includes('--image-repository "ghcr.io/${GITHUB_REPOSITORY_OWNER}/deepseek-harness"'), 'release workflow must package manifests for the image repository it publishes')
+  assert(releaseWorkflow.includes('pnpm run release:pack-container --out dist/container --image-repository "ghcr.io/${GITHUB_REPOSITORY_OWNER}/deepseek-harness"'), 'release workflow must package manifests for the image repository it publishes')
   assert(releaseWorkflow.includes('docker run --detach --name'), 'release workflow must start the built image before publishing it')
   assert(releaseWorkflow.includes('--jq \'.visibility\''), 'release workflow must require a public GHCR package')
   assert(releaseWorkflow.includes('docker logout ghcr.io') && releaseWorkflow.includes('docker pull "ghcr.io/${GITHUB_REPOSITORY_OWNER}/deepseek-harness:'), 'release workflow must prove an anonymous image pull')
