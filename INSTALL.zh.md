@@ -4,7 +4,7 @@
 
 本指南介绍 DeepSeek Harness 的所有受支持分发方式，并最终得到可运行的应用：npx、源码 checkout、从源码构建 Docker、Docker Release 离线包、从源码部署 Kubernetes、Kubernetes Release 离线包，以及打包后的桌面应用。
 
-以下命令固定使用仓库当前版本 `0.1.0-rc.11`，它也是当前的 GitHub Latest。GitHub 会将每个通过全部产物校验的 `dsh-v*` 发布标记为普通 Release，即使其 SemVer 包含 `-rc`；在这些公开 dsh Release 中，SemVer 最高的 tag 持有 Latest。出现更新版本时，请在 [GitHub Releases 页面](https://github.com/sdkwork-ai/deepseek-harness-desktop/releases)查看 `dsh-v` 后面的版本号，并替换固定值。版本中的 `-rc` 段仍表示候选版本。
+以下命令固定使用仓库当前版本 `0.1.0-rc.12`，它也是当前的 GitHub Latest。GitHub 会将每个通过全部产物校验的 `dsh-v*` 发布标记为普通 Release，即使其 SemVer 包含 `-rc`；在这些公开 dsh Release 中，SemVer 最高的 tag 持有 Latest。出现更新版本时，请在 [GitHub Releases 页面](https://github.com/sdkwork-ai/deepseek-harness-desktop/releases)查看 `dsh-v` 后面的版本号，并替换固定值。版本中的 `-rc` 段仍表示候选版本。
 
 ## 选择安装方式
 
@@ -138,7 +138,7 @@ pnpm --version
 Clone 当前 Release tag，安装锁定的依赖，并构建所有包与 Web 前端：
 
 ```sh
-git clone --branch dsh-v0.1.0-rc.11 --depth 1 https://github.com/sdkwork-ai/deepseek-harness-desktop.git
+git clone --branch dsh-v0.1.0-rc.12 --depth 1 https://github.com/sdkwork-ai/deepseek-harness-desktop.git
 cd deepseek-harness-desktop
 corepack enable
 corepack prepare pnpm@11.7.0 --activate
@@ -146,7 +146,7 @@ pnpm install --frozen-lockfile
 pnpm run build
 ```
 
-只有明确要跟随开发分支时才省略 `--branch dsh-v0.1.0-rc.11 --depth 1`。全新 checkout 必须先完成 `pnpm run build`，然后才能启动生产 Web profile。
+只有明确要跟随开发分支时才省略 `--branch dsh-v0.1.0-rc.12 --depth 1`。全新 checkout 必须先完成 `pnpm run build`，然后才能启动生产 Web profile。
 
 ### 启动并验证
 
@@ -172,7 +172,7 @@ pnpm dsh --profile headless "summarize this workspace"
 
 ```sh
 git fetch --tags
-git checkout dsh-v0.1.0-rc.11
+git checkout dsh-v0.1.0-rc.12
 pnpm install --frozen-lockfile
 pnpm run build
 ```
@@ -198,7 +198,7 @@ docker compose version
 Clone 当前 tag 并构建原生架构镜像：
 
 ```sh
-git clone --branch dsh-v0.1.0-rc.11 --depth 1 https://github.com/sdkwork-ai/deepseek-harness-desktop.git
+git clone --branch dsh-v0.1.0-rc.12 --depth 1 https://github.com/sdkwork-ai/deepseek-harness-desktop.git
 cd deepseek-harness-desktop
 docker build -t localhost/deepseek-harness:local .
 ```
@@ -249,7 +249,7 @@ GitHub Releases 提供 `amd64` 和 `arm64` 两种原生 Linux 镜像。项目没
 在 Linux、macOS 或 WSL 中运行以下命令。它会检测宿主机架构，并下载当前部署包、匹配的镜像及两份校验和文件：
 
 ```sh
-version='0.1.0-rc.11'
+version='0.1.0-rc.12'
 base="https://github.com/sdkwork-ai/deepseek-harness-desktop/releases/download/dsh-v${version}"
 case "$(uname -m)" in
   x86_64|amd64) arch=amd64 ;;
@@ -336,7 +336,7 @@ minikube version
 Clone 当前 tag、构建镜像、启动 Minikube，并将镜像归档加载到其容器运行时：
 
 ```sh
-git clone --branch dsh-v0.1.0-rc.11 --depth 1 https://github.com/sdkwork-ai/deepseek-harness-desktop.git
+git clone --branch dsh-v0.1.0-rc.12 --depth 1 https://github.com/sdkwork-ai/deepseek-harness-desktop.git
 cd deepseek-harness-desktop
 docker build -t localhost/deepseek-harness:local .
 docker save --output dsh-container-local.tar localhost/deepseek-harness:local
@@ -379,7 +379,7 @@ curl --fail http://127.0.0.1:4081/
 下载并校验 Docker 离线包说明中使用的同四个 Release 文件，然后启动 Minikube 并加载 Release 镜像：
 
 ```sh
-version='0.1.0-rc.11'
+version='0.1.0-rc.12'
 base="https://github.com/sdkwork-ai/deepseek-harness-desktop/releases/download/dsh-v${version}"
 case "$(uname -m)" in
   x86_64|amd64) arch=amd64 ;;
@@ -457,7 +457,7 @@ minikube delete
 
 ### 选择安装包
 
-打开 [GitHub Releases 页面](https://github.com/sdkwork-ai/deepseek-harness-desktop/releases)，选择 `dsh-v0.1.0-rc.11` 或更新的目标 Release，并下载 `SHA256SUMS` 以及与操作系统和 CPU 架构匹配的文件。
+打开 [GitHub Releases 页面](https://github.com/sdkwork-ai/deepseek-harness-desktop/releases)，选择 `dsh-v0.1.0-rc.12` 或更新的目标 Release，并下载 `SHA256SUMS` 以及与操作系统和 CPU 架构匹配的文件。
 
 | 平台 | 架构 | 安装包 | 便携归档 |
 |---|---|---|---|
@@ -473,7 +473,7 @@ minikube delete
 在 Linux 中只校验所选文件，因为 `SHA256SUMS` 还会列出本地可能没有下载的其他文件：
 
 ```sh
-version='0.1.0-rc.11'
+version='0.1.0-rc.12'
 asset="DeepSeek-Harness-${version}-linux-x86_64.AppImage"
 awk -v name="$asset" '$2 == name' SHA256SUMS | sha256sum --check
 ```
@@ -481,7 +481,7 @@ awk -v name="$asset" '$2 == name' SHA256SUMS | sha256sum --check
 在 macOS 中：
 
 ```sh
-version='0.1.0-rc.11'
+version='0.1.0-rc.12'
 asset="DeepSeek-Harness-${version}-mac-x64.dmg"
 awk -v name="$asset" '$2 == name' SHA256SUMS | shasum -a 256 --check
 ```
@@ -489,7 +489,7 @@ awk -v name="$asset" '$2 == name' SHA256SUMS | shasum -a 256 --check
 在 Windows PowerShell 中：
 
 ```powershell
-$version = '0.1.0-rc.11'
+$version = '0.1.0-rc.12'
 $asset = "DeepSeek-Harness-$version-win-x64.exe"
 $actual = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
 $line = Get-Content .\SHA256SUMS | Where-Object { $_ -match "^[0-9a-f]{64}  $([regex]::Escape($asset))$" }
@@ -514,7 +514,7 @@ Release 候选版本没有签名，Windows SmartScreen、macOS Gatekeeper 或 Li
 在 Debian 或 Ubuntu 中：
 
 ```sh
-version='0.1.0-rc.11'
+version='0.1.0-rc.12'
 deb_arch='amd64'
 sudo apt install "./DeepSeek-Harness-${version}-linux-${deb_arch}.deb"
 ```
@@ -524,7 +524,7 @@ ARM64 系统将 `deb_arch` 设为 `arm64`。
 在 Fedora、RHEL 或其他 RPM 系发行版中：
 
 ```sh
-version='0.1.0-rc.11'
+version='0.1.0-rc.12'
 rpm_arch='x86_64'
 sudo dnf install "./DeepSeek-Harness-${version}-linux-${rpm_arch}.rpm"
 ```
@@ -534,7 +534,7 @@ ARM64 系统将 `rpm_arch` 设为 `aarch64`。
 AppImage 和 tar 归档是便携安装方式：
 
 ```sh
-version='0.1.0-rc.11'
+version='0.1.0-rc.12'
 appimage_arch='x86_64'
 tar_arch='x64'
 chmod +x "DeepSeek-Harness-${version}-linux-${appimage_arch}.AppImage"

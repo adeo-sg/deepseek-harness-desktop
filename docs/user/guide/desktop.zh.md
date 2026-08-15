@@ -8,7 +8,7 @@
 
 打开 [GitHub Releases 页面](https://github.com/sdkwork-ai/deepseek-harness-desktop/releases)，选择目标 `dsh-v<version>` Release，再下载与操作系统和 CPU 架构匹配的文件。
 
-GitHub Latest 当前指向 `dsh-v0.1.0-rc.11`。在通过全部校验的普通 dsh Release 中，SemVer 最高的 tag 持有 Latest；只有需要固定特定版本时才选择其他 tag。
+GitHub Latest 当前指向 `dsh-v0.1.0-rc.12`。在通过全部校验的普通 dsh Release 中，SemVer 最高的 tag 持有 Latest；只有需要固定特定版本时才选择其他 tag。
 
 | 平台 | 架构 | 安装包 | 便携归档 |
 |---|---|---|---|

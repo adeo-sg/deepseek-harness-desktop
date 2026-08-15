@@ -8,7 +8,7 @@ The desktop application runs the same Web profile and stores the same Harness da
 
 Open the [GitHub Releases page](https://github.com/sdkwork-ai/deepseek-harness-desktop/releases), select the intended `dsh-v<version>` release, and download the file for the operating system and CPU architecture.
 
-GitHub Latest currently points to `dsh-v0.1.0-rc.11`. Among fully verified regular dsh Releases, the highest SemVer tag holds the Latest pointer; select another tag only when pinning that version intentionally.
+GitHub Latest currently points to `dsh-v0.1.0-rc.12`. Among fully verified regular dsh Releases, the highest SemVer tag holds the Latest pointer; select another tag only when pinning that version intentionally.
 
 | Platform | Architecture | Installer | Portable archive |
 |---|---|---|---|
