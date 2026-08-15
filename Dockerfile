@@ -5,6 +5,8 @@ FROM node:22.20-bookworm-slim AS build
 ENV PNPM_HOME=/pnpm
 ENV PATH=${PNPM_HOME}:${PATH}
 ENV CI=true
+# The container ships CLI/Web artifacts, not the desktop Electron runtime.
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
 WORKDIR /src
 
 RUN apt-get update \
@@ -42,6 +44,9 @@ ENV DSH_WEB_PORT=4080
 ENV DSH_ALLOW_NON_LOOPBACK=1
 ENV DSH_TELEMETRY_DISABLED=1
 ENV DSH_PERMISSION_MODE=workspace-write
+# Hardened Compose mounts /tmp with noexec. Load the Node-internals helper from
+# its installed package path instead of copying its native addon there.
+ENV NARB_DISABLE_NATIVE_CACHE=1
 ENV PNPM_HOME=/data/.local/share/pnpm
 ENV XDG_CACHE_HOME=/data/.cache
 ENV XDG_DATA_HOME=/data/.local/share

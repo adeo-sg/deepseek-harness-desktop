@@ -1,5 +1,5 @@
-# Build the Web container once, prove that it starts, and attach the saved
-# image plus deployment assets to the matching dsh GitHub Release.
+# Build the Web container as an offline archive, prove that archive starts,
+# and attach it with the deployment assets to the matching GitHub Release.
 name: Release (container)
 
 on:
@@ -24,8 +24,9 @@ env:
 
 jobs:
   package:
-    name: Build and package Web image
+    name: Package offline Web image (no registry push)
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
     outputs:
       stable: ${{ steps.version.outputs.stable }}
       version: ${{ steps.version.outputs.version }}
@@ -76,59 +77,71 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Build release image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile
-          load: true
-          platforms: linux/amd64
-          tags: localhost/deepseek-harness:${{ steps.version.outputs.version }}
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ steps.version.outputs.version }}
-          cache-from: type=gha,scope=container-amd64
-          cache-to: type=gha,scope=container-amd64,mode=max
-
-      - name: Save and reload release image
+      - name: Build offline image archive (no registry push)
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          filename="dsh-container-image-${{ steps.version.outputs.version }}-linux-amd64.tar.gz"
-          docker save "localhost/deepseek-harness:${{ steps.version.outputs.version }}" | gzip -n > "dist/container/$filename"
+          image_tar="dsh-container-image-${RELEASE_VERSION}-linux-amd64.tar"
+          image_archive="${image_tar}.gz"
+          docker buildx build \
+            --file Dockerfile \
+            --platform linux/amd64 \
+            --tag "localhost/deepseek-harness:${RELEASE_VERSION}" \
+            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.version=${RELEASE_VERSION}" \
+            --output "type=docker,dest=dist/container/${image_tar}" \
+            .
+          gzip -n "dist/container/$image_tar"
           (
             cd dist/container
-            sha256sum "$filename" > "$filename.sha256"
-            sha256sum --check "$filename.sha256"
+            sha256sum "$image_archive" > "$image_archive.sha256"
+            sha256sum --check "$image_archive.sha256"
           )
-          docker image rm "localhost/deepseek-harness:${{ steps.version.outputs.version }}"
-          gzip -dc "dist/container/$filename" | docker load
+          gzip -dc "dist/container/$image_archive" | docker load
 
-      - name: Smoke packaged Web container
+      - name: Verify and extract deployment archive
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          container="dsh-container-${GITHUB_RUN_ID}"
+          archive="dsh-container-${RELEASE_VERSION}.tar.gz"
+          (
+            cd dist/container
+            sha256sum --check "$archive.sha256"
+          )
+          rm -rf "dist/container/dsh-container-${RELEASE_VERSION}" dist/container/extracted
+          mkdir -p dist/container/extracted
+          tar -xzf "dist/container/$archive" -C dist/container/extracted
+          pnpm run release:verify-container-bundle \
+            --root "dist/container/extracted/dsh-container-${RELEASE_VERSION}" \
+            --version "$RELEASE_VERSION" \
+            --image "localhost/deepseek-harness:${RELEASE_VERSION}"
+
+      - name: Smoke packaged Compose deployment
+        shell: bash
+        env:
+          DEEPSEEK_API_KEY: test-only
+        run: |
+          set -euo pipefail
+          project="dsh-container-${GITHUB_RUN_ID}"
+          compose_file="dist/container/extracted/dsh-container-${{ steps.version.outputs.version }}/docker-compose.yml"
           cleanup() {
-            docker logs "$container" 2>&1 || true
-            docker rm --force "$container" >/dev/null 2>&1 || true
+            docker compose --project-name "$project" --file "$compose_file" logs --no-color 2>&1 || true
+            docker compose --project-name "$project" --file "$compose_file" down --volumes --remove-orphans >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
-          docker run --detach --name "$container" "localhost/deepseek-harness:${{ steps.version.outputs.version }}"
-          for attempt in {1..60}; do
-            status="$(docker inspect --format '{{.State.Health.Status}}' "$container")"
-            if [[ "$status" == healthy ]]; then
-              exit 0
-            fi
-            if [[ "$status" == unhealthy ]]; then
-              echo 'container health check failed' >&2
-              exit 1
-            fi
-            sleep 2
-          done
-          echo 'container did not become healthy within 120 seconds' >&2
-          exit 1
+          docker compose --project-name "$project" --file "$compose_file" up --detach --wait --wait-timeout 120
+          curl --fail --show-error --silent http://127.0.0.1:4080/ >/dev/null
+          docker compose --project-name "$project" --file "$compose_file" exec --no-TTY dsh \
+            sh -c 'printf release-smoke > /data/.release-smoke-marker'
+          docker compose --project-name "$project" --file "$compose_file" restart dsh
+          docker compose --project-name "$project" --file "$compose_file" up --detach --wait --wait-timeout 120
+          docker compose --project-name "$project" --file "$compose_file" exec --no-TTY dsh \
+            sh -c 'test "$(cat /data/.release-smoke-marker)" = release-smoke'
 
       - name: Upload release assets
         uses: actions/upload-artifact@v4

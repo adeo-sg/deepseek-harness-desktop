@@ -10,11 +10,11 @@ Web profile 需要可复现的 Docker 与 Kubernetes 发行方式，但工作区
 
 ## 决策
 
-签入的 [Dockerfile](../../../../Dockerfile) 会构建完整工作区，打包 `dsh` 与 `vendor` 发布 family 以及 Landlock 入口包，并将全部 tarball 作为普通 npm 消费方的直接依赖安装。npm 会解析该入口针对目标 Linux 架构的公开可选依赖；构建阶段要求该启动器可执行，然后才运行已安装 CLI 的 `--version` 路径。运行时阶段会将该消费方复制到 `/opt/dsh`。镜像提供 Node.js、bash、bubblewrap、Landlock 启动器、git 以及 `dsh plugin` 使用的固定 pnpm；进程以 UID 10001 运行，包管理器数据位于可写的 `/data` 卷下。
+签入的 [Dockerfile](../../../../Dockerfile) 会构建 CLI 和 Web 发布构建目标，打包 `dsh` 与 `vendor` 发布 family 以及 Landlock 入口包，并将全部 tarball 作为普通 npm 消费方的直接依赖安装。桌面 shell 不进入镜像，因此构建会跳过 Electron 二进制下载。npm 会解析该入口针对目标 Linux 架构的公开可选依赖；构建阶段要求该启动器可执行，然后才运行已安装 CLI 的 `--version` 路径。运行时阶段会将该消费方复制到 `/opt/dsh`。镜像提供 Node.js、bash、bubblewrap、Landlock 启动器、git 以及 `dsh plugin` 使用的固定 pnpm；进程以 UID 10001 运行，包管理器数据位于可写的 `/data` 卷下。
 
 容器部署监听 `4080`，而 npx 和本地 Web 运行器仍使用 `127.0.0.1:3080`。容器入口不经过 shell，而是将环境配置转换为 argv，并要求与 CLI 相同的显式非回环选择。
 
-[容器发布工作流](../../../../.github/workflows/container-release.yml)只构建一次 amd64 镜像，保存该镜像，重新加载已保存的字节，并对恢复后的镜像执行健康检查。`dsh-v<version>` 标签会将镜像归档、部署归档及各自的 SHA-256 文件附加到 GitHub Release；手动运行会将相同文件保留为 30 天的 Actions artifact。根据[以 GitHub Release 资产发布容器镜像](2026-08-15-container-images-as-github-release-assets.md)的决策，工作流不持有镜像 registry 凭据，也不写入 registry。[部署打包器](../../../../scripts/release/pack-container.ts)会复制 Compose、Kubernetes 和指南资产，从打包后的 Compose 文件中移除只用于源码的 `build` 部分，将 Compose 和 Kubernetes 固定到保存镜像的本地名称与版本，记录逐文件哈希，并为归档生成 SHA-256 校验和。
+[容器发布工作流](../../../../.github/workflows/container-release.yml)只构建一次 amd64 镜像并直接写为离线 Docker 归档，加载这些归档字节，校验并解压部署归档，再验证其内部 manifest，随后使用加固文件系统和命名卷启动解压后的 Compose 文件。按照[从安装路径加载容器原生 Loader 辅助组件](../bug-fix/2026-08-15-noexec-container-native-loader.md)的决策，冒烟测试要求 HTTP 健康，并验证重启后的 `/data` 持久化。`dsh-v<version>` 标签会将镜像归档、部署归档及各自的 SHA-256 文件附加到 GitHub Release；手动运行会将相同文件保留为 30 天的 Actions artifact。根据[以 GitHub Release 资产发布容器镜像](2026-08-15-container-images-as-github-release-assets.md)的决策，工作流不持有镜像 registry 凭据，也不写入 registry。[部署打包器](../../../../scripts/release/pack-container.ts)会复制 Compose、Kubernetes 和指南产物，从打包后的 Compose 文件中移除只用于源码的 `build` 部分，将 Compose 和 Kubernetes 固定到保存镜像的本地名称与版本，记录逐文件哈希，并为归档生成 SHA-256 校验和。
 
 Compose 默认只在 `127.0.0.1` 发布直接监听地址。Kubernetes Deployment 不挂载 ServiceAccount token，其可选 NGINX Ingress 示例同时要求 TLS 和身份验证 Secret。这些默认值会让未经身份验证的 Web API 远离不可信网络，同时仍允许显式配置的具备身份验证的反向代理访问它。
 
@@ -28,4 +28,4 @@ Compose 默认只在 `127.0.0.1` 发布直接监听地址。Kubernetes Deploymen
 
 ## 后果
 
-镜像构建会执行完整工作区构建和包安装，包括一个公开的平台包，因此成本高于复制现有工作区输出。相应地，运行时布局与 npm 发布产物一致，两个 Linux 沙箱后端都存在，部署归档无需仓库源码即可运行，并且本地端口和容器端口能够并存。静态校验会固定构建顺序、环回端口映射、Kubernetes 身份与网络策略、探针以及需要身份验证的 Ingress 示例，发布工作流则负责 Linux 上真实的 Docker 构建、归档重载和健康冒烟测试。
+镜像构建会执行完整的 CLI/Web 工作区构建和包安装，包括一个公开的平台包，因此成本高于复制现有工作区输出。相应地，构建不会获取未使用的桌面运行时；运行时布局与 npm 发布产物一致，两个 Linux 沙箱后端都存在，部署归档无需仓库源码即可运行，并且本地端口和容器端口能够并存。静态校验会固定构建顺序、环回端口映射、Kubernetes 身份与网络策略、探针以及需要身份验证的 Ingress 示例，发布工作流则负责 Linux 上真实的 Docker 构建、归档重载和打包后 Compose 冒烟测试。

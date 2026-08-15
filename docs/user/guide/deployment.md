@@ -14,9 +14,11 @@ The Web server binds `127.0.0.1:3080` by default. A network-facing deployment mu
 
 ### Build an image
 
-Build from the repository root. The multi-stage image compiles and packs the workspace, installs the same npm tarball set exercised by the release verifier into an ordinary npm consumer, verifies the installed CLI and architecture-specific Landlock launcher, installs bubblewrap and the pinned pnpm version used by `dsh plugin`, and runs as UID 10001. Package-manager data and caches live under the writable `/data` volume.
+Clone the repository and build from its root. The multi-stage image compiles and packs the workspace, installs the same npm tarball set exercised by the release verifier into an ordinary npm consumer, verifies the installed CLI and architecture-specific Landlock launcher, installs bubblewrap and the pinned pnpm version used by `dsh plugin`, and runs as UID 10001. Package-manager data and caches live under the writable `/data` volume.
 
 ```sh
+git clone https://github.com/sdkwork-ai/deepseek-harness-desktop.git
+cd deepseek-harness-desktop
 docker build -t localhost/deepseek-harness:local .
 ```
 
@@ -25,25 +27,44 @@ docker build -t localhost/deepseek-harness:local .
 Set `DEEPSEEK_API_KEY` in the shell and optionally set `DSH_TRUSTED_HOSTS` before starting Compose. The direct listener defaults to `127.0.0.1:4080`; change `DSH_PUBLISH_PORT` only when another process already owns that host port. Keep `DSH_PUBLISH_HOST` on loopback unless an authenticated reverse proxy protects the published listener.
 
 ```sh
-DEEPSEEK_API_KEY=your-key DSH_TRUSTED_HOSTS=localhost,127.0.0.1 docker compose up -d --build
+DEEPSEEK_API_KEY=your-key DSH_TRUSTED_HOSTS=localhost,127.0.0.1 docker compose up -d --no-build --wait --wait-timeout 180
 ```
 
-That command builds from a source checkout. A GitHub Release provides a saved `linux/amd64` image, its deployment bundle, and one SHA-256 file for each archive. Download all four assets into one directory, verify and load the image, then extract and start the deployment bundle. The packaged Compose file has no source-only build section and uses the image tag restored by `docker load`; `DSH_IMAGE` may override that tag.
+That command starts the image built from the source clone and waits for the hardened container to become healthy. A GitHub Release provides a saved `linux/amd64` image, its deployment bundle, and one SHA-256 file for each archive. Download all four assets into one directory, verify and load the image, then extract and start the deployment bundle. The packaged Compose file has no source-only build section and uses the image tag restored by `docker load`; `DSH_IMAGE` may override that tag.
 
 ```sh
-sha256sum -c dsh-container-image-<version>-linux-amd64.tar.gz.sha256
-sha256sum -c dsh-container-<version>.tar.gz.sha256
-gzip -dc dsh-container-image-<version>-linux-amd64.tar.gz | docker load
-tar -xzf dsh-container-<version>.tar.gz
-cd dsh-container-<version>
-DEEPSEEK_API_KEY=your-key docker compose up -d
+version=0.1.0-rc.10
+sha256sum -c "dsh-container-image-${version}-linux-amd64.tar.gz.sha256"
+sha256sum -c "dsh-container-${version}.tar.gz.sha256"
+gzip -dc "dsh-container-image-${version}-linux-amd64.tar.gz" | docker load
+tar -xzf "dsh-container-${version}.tar.gz"
+cd "dsh-container-${version}"
+DEEPSEEK_API_KEY=your-key docker compose up -d --wait --wait-timeout 180
 ```
 
 Open `http://127.0.0.1:4080`. The named `dsh-data` volume stores `$DSH_HOME`; `dsh-workspace` stores the default agent workspace. The image health check requests `/`, which is served after the Web profile has mounted.
 
 ## Kubernetes
 
-The manifests create one replica, two `ReadWriteOnce` claims, a ClusterIP Service, a NetworkPolicy, and HTTP startup/readiness/liveness probes. The checked-in manifests use `localhost/deepseek-harness:local`; the release bundle uses the versioned tag restored from its sibling image archive. Load that exact image into every target node before applying the kustomization. For local clusters, `kind load docker-image localhost/deepseek-harness:<version>` or `minikube image load localhost/deepseek-harness:<version>` imports an image already loaded into Docker.
+The manifests create one replica, two `ReadWriteOnce` claims, a ClusterIP Service, a NetworkPolicy, and HTTP startup/readiness/liveness probes. The checked-in manifests use `localhost/deepseek-harness:local`; the release bundle uses the versioned tag restored from its sibling image archive. Load that exact image into every target node before applying the kustomization. The following commands build a source clone, save the image in Docker archive format, and load that archive into Minikube. For kind, replace the final command with `kind load image-archive dsh-container-local.tar`.
+
+```sh
+docker build -t localhost/deepseek-harness:local .
+docker save --output dsh-container-local.tar localhost/deepseek-harness:local
+minikube image load dsh-container-local.tar
+```
+
+For an offline Release deployment, download all four assets into one directory and run the following sequence without starting Compose. It verifies both checksums, converts the image asset to the archive format accepted by Minikube, loads the image, and enters the extracted deployment bundle. For kind, replace the `minikube` command with `kind load image-archive "dsh-container-image-${version}-linux-amd64.tar"`.
+
+```sh
+version=0.1.0-rc.10
+sha256sum -c "dsh-container-image-${version}-linux-amd64.tar.gz.sha256"
+sha256sum -c "dsh-container-${version}.tar.gz.sha256"
+gzip -dc "dsh-container-image-${version}-linux-amd64.tar.gz" > "dsh-container-image-${version}-linux-amd64.tar"
+minikube image load "dsh-container-image-${version}-linux-amd64.tar"
+tar -xzf "dsh-container-${version}.tar.gz"
+cd "dsh-container-${version}"
+```
 
 Create the API key as a Secret before applying the kustomization.
 
@@ -51,18 +72,18 @@ Create the API key as a Secret before applying the kustomization.
 kubectl create secret generic dsh-credentials \
   --from-literal=DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY"
 kubectl apply -k deploy/kubernetes
-kubectl port-forward svc/dsh 4080:4080
+kubectl port-forward svc/dsh 4081:4080
 ```
 
-Open `http://127.0.0.1:4080` after the port-forward is ready. The port-forward uses `4080`; the npx/local runner remains on `3080`.
+Open `http://127.0.0.1:4081` after the port-forward is ready. Kubernetes uses host port `4081`, Docker uses `4080`, and the npx/local runner remains on `3080`.
 
 For a cluster that cannot accept a preloaded image, push the loaded image to a registry you control and replace the local image name from the extracted deployment bundle root before applying it.
 
 ```sh
-docker tag localhost/deepseek-harness:<version> registry.example.com/deepseek-harness:<version>
-docker push registry.example.com/deepseek-harness:<version>
+docker tag "localhost/deepseek-harness:${version}" "registry.example.com/deepseek-harness:${version}"
+docker push "registry.example.com/deepseek-harness:${version}"
 cd deploy/kubernetes
-kustomize edit set image localhost/deepseek-harness=registry.example.com/deepseek-harness:<version>
+kustomize edit set image "localhost/deepseek-harness=registry.example.com/deepseek-harness:${version}"
 kubectl apply -k .
 ```
 
@@ -78,13 +99,13 @@ The Deployment uses `Recreate` because the JSONL session and storage files are l
 
 The Web carrier has no built-in TLS or authentication. Use an Ingress or reverse proxy with authentication, TLS, request limits, and an access policy before exposing it outside a trusted network. Keep `DSH_PERMISSION_MODE=workspace-write`; `danger-full-access` removes the file-effect restriction and is not a container hardening setting.
 
-The image is read-only except for `/data`, `/workspace`, and an in-memory `/tmp`. It carries `bash`, bubblewrap, and the matching Landlock launcher; the sandbox selects a usable enforcing backend. A host that supports neither bubblewrap user namespaces nor Landlock makes shell tools fail closed. Do not mount a ServiceAccount token or add Linux capabilities to work around that failure.
+The image is read-only except for `/data`, `/workspace`, and `/tmp`. Compose supplies `/tmp` as an in-memory `noexec` mount. Kubernetes supplies an in-memory `emptyDir`; the core `emptyDir` API has no mount-option field and does not promise `noexec`. The image loads the Node-internals native helper directly from its read-only installed package rather than copying it to temporary storage. It carries `bash`, bubblewrap, and the matching Landlock launcher; the sandbox selects a usable enforcing backend. A host that supports neither bubblewrap user namespaces nor Landlock makes shell tools fail closed. Do not mount a ServiceAccount token or add Linux capabilities to work around that failure.
 
 The probes use `GET /` because the Web server has no unauthenticated health endpoint. A non-200 response means the frontend or profile has not mounted, so inspect `docker compose logs` or `kubectl logs` before changing probe timings.
 
 ## Release assets
 
-A `dsh-v<version>` tag builds one `linux/amd64` image, saves it as `dsh-container-image-<version>-linux-amd64.tar.gz`, reloads that archive, and health-checks the restored image. The matching GitHub Release keeps that image, the `dsh-container-<version>.tar.gz` deployment bundle, and both SHA-256 files. The workflow does not log in to or publish to an image registry. A manual run performs the same build and retains the four files as a 30-day Actions artifact instead of creating a Release. The npm release workflow remains separate; `pnpm run release:pack` does not contain the Docker image. Build from source on another architecture, or publish an architecture-specific image to a registry you control. Pin that registry tag or digest in production and update the Kustomize image override with the application version.
+A `dsh-v<version>` tag builds one `linux/amd64` image directly as `dsh-container-image-<version>-linux-amd64.tar.gz` and loads that archive for validation. The workflow verifies and extracts `dsh-container-<version>.tar.gz`, validates its internal file manifest, then starts the extracted Compose file with its read-only root, `noexec` temporary mount, and named volumes; it requires an HTTP response and verifies `/data` across a container restart. The matching GitHub Release keeps that image, the deployment bundle, and both SHA-256 files. The workflow does not use an image-publishing action, log in to an image registry, or push a registry tag. A manual run performs the same build and retains the four files as a 30-day Actions artifact instead of creating a Release. The npm release workflow remains separate; `pnpm run release:pack` does not contain the Docker image. Build from source on another architecture, or publish an architecture-specific image to a registry you control. Pin that registry tag or digest in production and update the Kustomize image override with the application version.
 
 ## Troubleshooting
 
