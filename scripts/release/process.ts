@@ -3,9 +3,9 @@
  * `pnpm`, `npm`, and `tar`, and each needs one of three failure behaviours.
  */
 
-import { spawnSync } from 'node:child_process'
 import { realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { execaSync } from 'execa'
 
 /** Where and with what environment a release step runs a command. */
 export interface RunOptions {
@@ -33,9 +33,8 @@ export interface CommandResult {
  * @returns The exit status and captured streams.
  */
 export function attempt(command: string, args: readonly string[], options: RunOptions = {}): CommandResult {
-  const result = spawnSync(command, [...args], { cwd: options.cwd, env: options.env, encoding: 'utf8' })
-  if (result.error !== undefined) throw result.error
-  return { status: result.status, stdout: result.stdout, stderr: result.stderr }
+  const result = execaSync(command, [...args], { cwd: options.cwd, env: options.env, reject: false })
+  return { status: result.exitCode, stdout: result.stdout, stderr: result.stderr }
 }
 
 /**
@@ -61,9 +60,13 @@ export function capture(command: string, args: readonly string[], options: RunOp
  * @param options - working directory and environment.
  */
 export function run(command: string, args: readonly string[], options: RunOptions = {}): void {
-  const result = spawnSync(command, [...args], { cwd: options.cwd, env: options.env, stdio: 'inherit' })
-  if (result.error !== undefined) throw result.error
-  if (result.status !== 0) throw new Error(`${command} ${args.join(' ')} exited with ${String(result.status)}`)
+  const result = execaSync(command, [...args], {
+    cwd: options.cwd,
+    env: options.env,
+    reject: false,
+    stdio: 'inherit',
+  })
+  if (result.exitCode !== 0) throw new Error(`${command} ${args.join(' ')} exited with ${String(result.exitCode)}`)
 }
 
 /**
