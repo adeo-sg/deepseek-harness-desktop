@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-15-noexec-container-native-loader.md
-2026-08-15-noexec-container-native-loader.md: 4fb8b73ecc531d0a6ab35e7930a86fbe6bc4c90a
-2026-08-15-noexec-container-native-loader.zh.md: 4dfa0c20a215bec41cd3957d2498a335d4cd439e
+2026-08-15-noexec-container-native-loader.md: 1fedfd4f6800e194db6ed000546009b96c09c6b5
+2026-08-15-noexec-container-native-loader.zh.md: 23cad9965c04944fd605cd1f631ae32b7330cd5d

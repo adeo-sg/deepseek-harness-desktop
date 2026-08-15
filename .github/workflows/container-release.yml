@@ -137,11 +137,10 @@ jobs:
           docker compose --project-name "$project" --file "$compose_file" up --detach --wait --wait-timeout 120
           curl --fail --show-error --silent http://127.0.0.1:4080/ >/dev/null
           docker compose --project-name "$project" --file "$compose_file" exec --no-TTY dsh \
-            sh -c 'printf release-smoke > /data/.release-smoke-marker'
-          docker compose --project-name "$project" --file "$compose_file" restart dsh
-          docker compose --project-name "$project" --file "$compose_file" up --detach --wait --wait-timeout 120
+            sh -c 'printf release-data > /data/.release-smoke-marker && printf release-workspace > /workspace/.release-smoke-marker'
+          docker compose --project-name "$project" --file "$compose_file" up --detach --force-recreate --wait --wait-timeout 120
           docker compose --project-name "$project" --file "$compose_file" exec --no-TTY dsh \
-            sh -c 'test "$(cat /data/.release-smoke-marker)" = release-smoke'
+            sh -c 'test "$(cat /data/.release-smoke-marker)" = release-data && test "$(cat /workspace/.release-smoke-marker)" = release-workspace'
 
       - name: Upload release assets
         uses: actions/upload-artifact@v4

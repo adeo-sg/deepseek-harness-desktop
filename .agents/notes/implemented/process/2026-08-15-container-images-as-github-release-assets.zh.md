@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-[容器发布工作流](../../../../.github/workflows/container-release.yml)直接驱动 Buildx 构建一个标记为 `localhost/deepseek-harness:<version>` 的原生 `linux/amd64` 镜像，并将其写为 Docker 归档，而不加载或发布镜像。工作流使用 gzip 压缩归档，写入并校验 SHA-256 文件，再加载压缩归档进行验证。它还会校验部署归档的摘要，删除打包器的暂存目录，解压归档，根据内部 manifest 校验每个文件，并针对恢复后的镜像运行解压后 Compose 的健康与持久化冒烟测试。该顺序验证的是附加到 Release 的四个文件，而不是另一份构建结果或暂存输出。
+[容器发布工作流](../../../../.github/workflows/container-release.yml)直接驱动 Buildx 构建一个标记为 `localhost/deepseek-harness:<version>` 的原生 `linux/amd64` 镜像，并将其写为 Docker 归档，而不加载或发布镜像。工作流使用 gzip 压缩归档，写入并校验 SHA-256 文件，再加载压缩归档进行验证。它还会校验部署归档的摘要，删除打包器的暂存目录，解压归档，根据内部 manifest 校验每个文件，并针对恢复后的镜像运行解压后 Compose 的健康与持久化冒烟测试。该顺序验证的是附加到 Release 的四个文件，而不是另一份构建结果或暂存输出。[从打包产物构造容器发布](2026-08-15-container-release-from-packed-artifacts.md)负责构造可运行镜像与部署包，本决策负责通过 GitHub Release 传输这些产物。
 
 `dsh-v<version>` 标签会创建包含四个资产的 GitHub Release：镜像归档及其校验文件、部署归档及其校验文件。打包 job 最多执行 25 分钟，不使用镜像发布 action、不请求 package 写权限、不向镜像 registry 认证，也不推送 registry 标签。手动运行不会创建 Release，而是将相同文件保留为 30 天的 Actions artifact。
 
