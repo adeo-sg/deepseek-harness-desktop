@@ -5,12 +5,10 @@
 //   npx electron scripts/packaged-boot-probe.cjs <app-dir> [--no-sandbox]
 //
 // The probe covers clean-machine first boot and restart with a plugin installed
-// in the shared Web profile. The host tree boots with the carrier + bridge
-// services, the packaged frontend dist serves the shell (with the injected
-// boot manifest), client-modules serves every advertised plugin bundle, and a
-// session-create round trip assembles a real agent from the shipped preset
-// roster. The second boot proves that a profile-local bundle and user patch
-// reach Electron without persisting the desktop transport in that manifest.
+// in the shared Web profile. The host tree serves every advertised client
+// bundle, creates a session, and persists plugin, model, and credential
+// configuration. The second boot verifies that configuration and the profile
+// plugin without persisting the desktop transport in the shared manifest.
 const { app } = require('electron')
 const { mkdirSync, readFileSync, rmSync, writeFileSync } = require('node:fs')
 const { join, resolve } = require('node:path')
@@ -24,52 +22,116 @@ const resultFile = join(home, 'probe-result.txt')
 
 rmSync(home, { recursive: true, force: true })
 
+function valueOf(response) {
+  if (response.result?.ok === true) return response.result.value
+  throw new Error(response.result?.error?.message ?? 'RPC failed without a diagnostic')
+}
+
 app.whenReady().then(async () => {
   const lines = []
   let ok = false
   try {
     const { bootDesktopHost } = await import('file://' + appDir + '/lib/host.js')
-    const { ctx, shutdown } = await bootDesktopHost({ home, installAnchor: appDir + '/package.json' })
-    // The tree settled; the webServer-shaped carrier and the desktop bridge
-    // are the desktop surface's contract.
-    const carrier = ctx.get('webServer')
-    const hasCarrier = typeof carrier.dispatch === 'function'
-    const hasBridge = ctx.get('desktopBridge') !== undefined
-    lines.push('carrier: ' + String(hasCarrier) + ', bridge: ' + String(hasBridge))
+    const requiredNamespaces = ['agent-loop', 'llm-deepseek', 'llm-pi-ai', 'shell', 'web-search-deepseek']
+    const requiredSettingsClients = [
+      '@deepseek-ai/dsh-client-ui-settings',
+      '@deepseek-ai/dsh-client-ui-settings-general',
+      '@deepseek-ai/dsh-client-ui-settings-models',
+      '@deepseek-ai/dsh-client-ui-settings-plugin-inventory',
+      '@deepseek-ai/dsh-client-ui-settings-plugins',
+    ]
+    const credentialRef = 'DSH_PACKAGED_CONFIGURATION_PROBE_KEY'
+    const credentialValue = 'packaged-configuration-probe-secret'
+    const modelBaseURL = 'https://packaged-configuration-probe.invalid/v1'
+    const shellTimeoutMs = 23_456
+    let hasCarrier = false
+    let hasBridge = false
+    let servesShell = false
+    let servesBundles = false
+    let createsSession = false
+    let configurationAvailable = false
+    let credentialSeparated = false
+    let cleanClientIds = []
 
-    // Clean-machine first render: the packaged dist must serve the shell
-    // with the boot manifest injected by client-modules' index tap.
-    const index = await carrier.dispatch(new Request('http://dsh.internal/index.html'))
-    const indexText = await index.text()
-    const servesShell = index.status === 200 && indexText.includes('window.__DSH_BOOT__')
-    lines.push('shell: ' + String(servesShell) + ' (status ' + index.status + ')')
+    const first = await bootDesktopHost({ home, installAnchor: appDir + '/package.json' })
+    try {
+      // The tree settled; the webServer-shaped carrier and the desktop bridge
+      // are the desktop transport's required services.
+      const carrier = first.ctx.get('webServer')
+      hasCarrier = typeof carrier.dispatch === 'function'
+      hasBridge = first.ctx.get('desktopBridge') !== undefined
+      lines.push('carrier: ' + String(hasCarrier) + ', bridge: ' + String(hasBridge))
 
-    // Every client bundle advertised by the installed graph must resolve
-    // through client-modules' /plugins route. One representative bundle can
-    // pass while another package was omitted from electron-builder's closure.
-    const graph = ctx.get('clientModules').graph()
-    const cleanClientIds = graph.entries.map(entry => entry.id).sort()
-    const bundleResults = await Promise.all(graph.entries.map(async (entry) => {
-      const response = await carrier.dispatch(new Request(new URL(entry.url, 'http://dsh.internal')))
-      return { id: entry.id, status: response.status }
-    }))
-    const failedBundles = bundleResults.filter(result => result.status !== 200)
-    const servesBundles = bundleResults.length > 0 && failedBundles.length === 0
-    lines.push('bundles: ' + String(servesBundles) + ' ('
-      + String(bundleResults.length - failedBundles.length) + '/' + String(bundleResults.length) + ')'
-      + (failedBundles.length === 0 ? '' : ' ' + JSON.stringify(failedBundles)))
-    lines.push('client-ids: ' + JSON.stringify(cleanClientIds))
+      const index = await carrier.dispatch(new Request('http://dsh.internal/index.html'))
+      const indexText = await index.text()
+      servesShell = index.status === 200 && indexText.includes('window.__DSH_BOOT__')
+      lines.push('shell: ' + String(servesShell) + ' (status ' + index.status + ')')
 
-    // A session-create round trip through the gateway assembles a real agent
-    // from the shipped preset roster (the composition defaults to 'standard');
-    // the clean-machine first-run path.
-    const apiProxy = ctx.get('apiProxy')
-    const created = await apiProxy.sessions.create({ rpcId: 'probe', payload: {} })
-    const createsSession = created.result?.ok === true
-    lines.push('session.create: ' + String(createsSession) + (created.result?.ok === true
-      ? ' (' + created.result.value.sessionId + ')'
-      : ' ' + JSON.stringify(created.result?.error)))
-    await shutdown.shutdown(0)
+      // One resolved bundle cannot prove that electron-builder retained the
+      // full client graph, so the probe fetches every advertised entry.
+      const graph = first.ctx.get('clientModules').graph()
+      cleanClientIds = graph.entries.map(entry => entry.id).sort()
+      const bundleResults = await Promise.all(graph.entries.map(async (entry) => {
+        const response = await carrier.dispatch(new Request(new URL(entry.url, 'http://dsh.internal')))
+        return { id: entry.id, status: response.status }
+      }))
+      const failedBundles = bundleResults.filter(result => result.status !== 200)
+      servesBundles = bundleResults.length > 0 && failedBundles.length === 0
+      lines.push('bundles: ' + String(servesBundles) + ' ('
+        + String(bundleResults.length - failedBundles.length) + '/' + String(bundleResults.length) + ')'
+        + (failedBundles.length === 0 ? '' : ' ' + JSON.stringify(failedBundles)))
+      lines.push('client-ids: ' + JSON.stringify(cleanClientIds))
+
+      const apiProxy = first.ctx.get('apiProxy')
+      const described = valueOf(await apiProxy.settings.describe({ rpcId: 'probe-settings', payload: {} }))
+      const namespaceIds = described.namespaces.map(namespace => namespace.ns)
+      const providerIds = valueOf(await apiProxy.llm.providers({ rpcId: 'probe-providers', payload: {} }))
+        .providers.map(provider => provider.provider)
+      configurationAvailable = requiredNamespaces.every(ns => namespaceIds.includes(ns))
+        && requiredSettingsClients.every(id => cleanClientIds.includes(id))
+        && ['deepseek-official', 'openai'].every(provider => providerIds.includes(provider))
+      lines.push('configuration: ' + String(configurationAvailable)
+        + ' (namespaces ' + String(requiredNamespaces.filter(ns => namespaceIds.includes(ns)).length)
+        + '/' + String(requiredNamespaces.length)
+        + ', settings-clients ' + String(requiredSettingsClients.filter(id => cleanClientIds.includes(id)).length)
+        + '/' + String(requiredSettingsClients.length) + ')')
+
+      valueOf(await apiProxy.settings.mutate({
+        rpcId: 'probe-shell-settings',
+        payload: {
+          ns: 'shell',
+          ops: [{ op: 'set', path: ['timeoutMs'], value: shellTimeoutMs }],
+        },
+      }))
+      valueOf(await apiProxy.settings.mutate({
+        rpcId: 'probe-model-settings',
+        payload: {
+          ns: 'llm-deepseek',
+          ops: [
+            { op: 'set', path: ['apiKeyEnv'], value: credentialRef },
+            { op: 'set', path: ['baseURL'], value: modelBaseURL },
+          ],
+        },
+      }))
+      valueOf(await apiProxy.credentials.set({
+        rpcId: 'probe-credential',
+        payload: { ref: credentialRef, value: credentialValue },
+      }))
+      const settingsDocument = readFileSync(join(home, 'settings.yaml'), 'utf8')
+      const credentialsDocument = readFileSync(join(home, '.credentials.yaml'), 'utf8')
+      credentialSeparated = settingsDocument.includes(credentialRef)
+        && !settingsDocument.includes(credentialValue)
+        && credentialsDocument.includes(credentialValue)
+      lines.push('credential-separated: ' + String(credentialSeparated))
+
+      const created = await apiProxy.sessions.create({ rpcId: 'probe-session', payload: {} })
+      createsSession = created.result?.ok === true
+      lines.push('session.create: ' + String(createsSession) + (created.result?.ok === true
+        ? ' (' + created.result.value.sessionId + ')'
+        : ' ' + JSON.stringify(created.result?.error)))
+    } finally {
+      await first.shutdown.shutdown(0)
+    }
 
     // Existing-machine path: a plugin installed into the canonical Web
     // profile, plus that profile's own patch, must reach Electron unchanged.
@@ -122,18 +184,44 @@ app.whenReady().then(async () => {
       '',
     ].join('\n'))
 
+    let loadsProfilePlugin = false
+    let preservesClientGraph = false
+    let sharedProfile = false
+    let configurationPersisted = false
+    let credentialPersisted = false
     const customized = await bootDesktopHost({ home, installAnchor: appDir + '/package.json' })
-    const loadsProfilePlugin = customized.ctx.get('packagedProfileAddon') === 'web-profile-patch'
-      && customized.ctx.get('packagedRequireAddon') === undefined
-    const customizedClientIds = customized.ctx.get('clientModules').graph().entries.map(entry => entry.id).sort()
-    const preservesClientGraph = JSON.stringify(customizedClientIds) === JSON.stringify(cleanClientIds)
-    const persistedManifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-    const sharedProfile = !persistedManifest.dsh.profile.bundles.includes('@deepseek-ai/dsh-desktop-app')
-    lines.push('profile-plugin: ' + String(loadsProfilePlugin)
-      + ', shared-web-profile: ' + String(sharedProfile))
-    lines.push('client-graph-stable: ' + String(preservesClientGraph))
-    await customized.shutdown.shutdown(0)
+    try {
+      loadsProfilePlugin = customized.ctx.get('packagedProfileAddon') === 'web-profile-patch'
+        && customized.ctx.get('packagedRequireAddon') === undefined
+      const customizedClientIds = customized.ctx.get('clientModules').graph().entries.map(entry => entry.id).sort()
+      preservesClientGraph = JSON.stringify(customizedClientIds) === JSON.stringify(cleanClientIds)
+      const persistedManifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+      sharedProfile = !persistedManifest.dsh.profile.bundles.includes('@deepseek-ai/dsh-desktop-app')
+
+      const apiProxy = customized.ctx.get('apiProxy')
+      const described = valueOf(await apiProxy.settings.describe({ rpcId: 'probe-settings-restart', payload: {} }))
+      const shell = described.namespaces.find(namespace => namespace.ns === 'shell')
+      const deepseek = described.namespaces.find(namespace => namespace.ns === 'llm-deepseek')
+      configurationPersisted = shell?.user?.timeoutMs === shellTimeoutMs
+        && deepseek?.user?.apiKeyEnv === credentialRef
+        && deepseek?.user?.baseURL === modelBaseURL
+      const credential = valueOf(await apiProxy.credentials.describe({
+        rpcId: 'probe-credential-restart',
+        payload: { refs: [credentialRef] },
+      })).credentials[credentialRef]
+      credentialPersisted = credential?.configured === true
+        && credential.source === 'file'
+        && credential.writable === true
+      lines.push('configuration-persisted: ' + String(configurationPersisted)
+        + ', credential-persisted: ' + String(credentialPersisted))
+      lines.push('profile-plugin: ' + String(loadsProfilePlugin)
+        + ', shared-web-profile: ' + String(sharedProfile))
+      lines.push('client-graph-stable: ' + String(preservesClientGraph))
+    } finally {
+      await customized.shutdown.shutdown(0)
+    }
     ok = hasCarrier && hasBridge && servesShell && servesBundles && createsSession
+      && configurationAvailable && credentialSeparated && configurationPersisted && credentialPersisted
       && loadsProfilePlugin && sharedProfile && preservesClientGraph
   } catch (cause) {
     lines.push('BOOT FAILED:')

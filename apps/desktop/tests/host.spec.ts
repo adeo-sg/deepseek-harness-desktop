@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
 import {
   initProfile,
   PROFILE_PATCH_FILENAME,
@@ -18,27 +19,91 @@ import {
   resolveProfileDir,
   writeProfileManifest,
 } from '@deepseek-ai/dsh-app-boot'
+import type { ConfigurableProviderView } from '@deepseek-ai/dsh-host-apiproxy/api'
+import { InProcessApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
+import type { DesktopBridgeHost } from '@deepseek-ai/dsh-client-connection/desktop'
+import type { DesktopWebServer } from '@deepseek-ai/dsh-host-desktop-carrier'
+import { launchWebScaffold } from '../../web/tests/scaffold.ts'
 import {
   bootDesktopHost,
   DESKTOP_OVERLAY_BUNDLE,
   PROFILE_NAME,
   resolveTelemetryPatch,
 } from '../src/host.ts'
-import type { DesktopWebServer } from '@deepseek-ai/dsh-host-desktop-carrier'
 
 const WORKSPACE_BUILT = existsSync(fileURLToPath(new URL('../../cli/lib/bin.js', import.meta.url)))
 const maybeDescribe = WORKSPACE_BUILT ? describe : describe.skip
 
 let home: string | undefined
+let credentialEnvironment: { ref: string; value: string | undefined } | undefined
 
 afterEach(async () => {
   if (home !== undefined) rmSync(home, { recursive: true, force: true })
   home = undefined
+  if (credentialEnvironment !== undefined) {
+    if (credentialEnvironment.value === undefined) Reflect.deleteProperty(process.env, credentialEnvironment.ref)
+    else process.env[credentialEnvironment.ref] = credentialEnvironment.value
+  }
+  credentialEnvironment = undefined
 })
 
 function stageHome(): string {
   home = mkdtempSync(join(tmpdir(), 'dsh-desktop-host-'))
   return home
+}
+
+/** Unwrap one successful unary RPC and fail with the Host diagnostic otherwise. */
+function valueOf<T>(response: {
+  result: { ok: true; value: T } | { ok: false; error: { message: string } }
+}): T {
+  if (!response.result.ok) throw new Error(response.result.error.message)
+  return response.result.value
+}
+
+/** Build an API client over the loopback-normalized request the Electron IPC handler forwards. */
+function desktopApi(bridge: DesktopBridgeHost): InProcessApiClient {
+  return new InProcessApiClient({
+    fetch: (input, init) => {
+      const source = new URL(input instanceof Request ? input.url : String(input))
+      const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
+      headers.set('host', '127.0.0.1')
+      return bridge.fetch(new Request(`http://127.0.0.1${source.pathname}${source.search}`, {
+        ...init,
+        headers,
+      }))
+    },
+  })
+}
+
+/** Build the same protocol client over the real HTTP carrier bound by the Web scaffold. */
+function webApi(baseUrl: string): InProcessApiClient {
+  return new InProcessApiClient({
+    fetch: (input, init) => {
+      const source = new URL(input instanceof Request ? input.url : String(input))
+      return fetch(new URL(`${source.pathname}${source.search}`, baseUrl), init)
+    },
+  })
+}
+
+/** Settings UI packages advertised to the renderer, excluding desktop-only shell additions. */
+function settingsClientPackages(ctx: Context): string[] {
+  const modules = ctx.get('clientModules') as unknown as {
+    graph(): { entries: readonly { id: string }[] }
+  }
+  return modules.graph().entries
+    .map(entry => entry.id)
+    .filter(id => id.startsWith('@deepseek-ai/dsh-client-ui-settings'))
+    .sort()
+}
+
+/** Namespaces that back the shipped plugin and model configuration surfaces. */
+function configurationNamespaces(namespaces: readonly { ns: string }[]): string[] {
+  const expected = new Set(['shell', 'agent-loop', 'web-search-deepseek', 'llm-deepseek', 'llm-pi-ai'])
+  return namespaces.map(namespace => namespace.ns).filter(ns => expected.has(ns)).sort()
+}
+
+function providerDirectoryById(providers: readonly ConfigurableProviderView[]): ConfigurableProviderView[] {
+  return [...providers].sort((left, right) => left.provider < right.provider ? -1 : left.provider > right.provider ? 1 : 0)
 }
 
 maybeDescribe('bootDesktopHost', () => {
@@ -150,6 +215,114 @@ maybeDescribe('bootDesktopHost', () => {
       await shutdown.shutdown(0)
     }
   })
+
+  it('shares plugin, model, and credential configuration bidirectionally with Web', async () => {
+    const harnessHome = stageHome()
+    const credentialRef = 'DSH_CARRIER_SHARED_API_KEY_TEST'
+    const desktopSecret = 'sk-test-desktop-to-web'
+    const webSecret = 'sk-test-web-to-desktop'
+    const firstBaseUrl = 'https://desktop-config.example/v1'
+    const secondBaseUrl = 'https://web-config.example/v1'
+    const expectedNamespaces = ['agent-loop', 'llm-deepseek', 'llm-pi-ai', 'shell', 'web-search-deepseek']
+    const originalCredential = process.env[credentialRef]
+    credentialEnvironment = { ref: credentialRef, value: originalCredential }
+    Reflect.deleteProperty(process.env, credentialRef)
+
+    let desktopSettingsPackages: string[] = []
+    let desktopNamespaces: string[] = []
+    let desktopProviders: ConfigurableProviderView[] = []
+    const firstDesktop = await bootDesktopHost({ home: harnessHome })
+    try {
+      const bridge = firstDesktop.ctx.get('desktopBridge') as unknown as DesktopBridgeHost
+      const api = desktopApi(bridge)
+      const described = valueOf(await api.settings.describe({}))
+      expect(configurationNamespaces(described.namespaces)).toEqual(expectedNamespaces)
+      desktopNamespaces = described.namespaces.map(namespace => namespace.ns).sort()
+      desktopSettingsPackages = settingsClientPackages(firstDesktop.ctx)
+      expect(desktopSettingsPackages).toEqual([
+        '@deepseek-ai/dsh-client-ui-settings',
+        '@deepseek-ai/dsh-client-ui-settings-general',
+        '@deepseek-ai/dsh-client-ui-settings-models',
+        '@deepseek-ai/dsh-client-ui-settings-plugin-inventory',
+        '@deepseek-ai/dsh-client-ui-settings-plugins',
+      ])
+      desktopProviders = providerDirectoryById(valueOf(await api.llm.providers({})).providers)
+
+      valueOf(await api.settings.mutate({
+        ns: 'shell',
+        ops: [{ op: 'set', path: ['timeoutMs'], value: 12_345 }],
+      }))
+      valueOf(await api.settings.mutate({
+        ns: 'llm-deepseek',
+        ops: [
+          { op: 'set', path: ['apiKeyEnv'], value: credentialRef },
+          { op: 'set', path: ['baseURL'], value: firstBaseUrl },
+        ],
+      }))
+      valueOf(await api.credentials.set({ ref: credentialRef, value: desktopSecret }))
+    } finally {
+      await firstDesktop.shutdown.shutdown(0)
+    }
+
+    const firstSettingsDocument = readFileSync(join(harnessHome, 'settings.yaml'), 'utf8')
+    expect(firstSettingsDocument).toContain(`apiKeyEnv: ${credentialRef}`)
+    expect(firstSettingsDocument).not.toContain(desktopSecret)
+    expect(readFileSync(join(harnessHome, '.credentials.yaml'), 'utf8')).toContain(desktopSecret)
+
+    const web = await launchWebScaffold({ harnessHome, deepSeekMissingCredential: true })
+    try {
+      const api = webApi(web.baseUrl)
+      const described = valueOf(await api.settings.describe({}))
+      expect(configurationNamespaces(described.namespaces)).toEqual(expectedNamespaces)
+      expect(described.namespaces.map(namespace => namespace.ns).sort()).toEqual(desktopNamespaces)
+      expect(settingsClientPackages(web.ctx)).toEqual(desktopSettingsPackages)
+      expect(providerDirectoryById(valueOf(await api.llm.providers({})).providers)).toEqual(desktopProviders)
+      expect(described.namespaces.find(namespace => namespace.ns === 'shell')?.user)
+        .toMatchObject({ timeoutMs: 12_345 })
+      expect(described.namespaces.find(namespace => namespace.ns === 'llm-deepseek')?.user)
+        .toMatchObject({ apiKeyEnv: credentialRef, baseURL: firstBaseUrl })
+      expect(valueOf(await api.credentials.describe({ refs: [credentialRef] })).credentials[credentialRef])
+        .toEqual({ configured: true, source: 'file', writable: true })
+
+      valueOf(await api.settings.mutate({
+        ns: 'agent-loop',
+        ops: [{ op: 'set', path: ['maxParallelToolCalls'], value: 7 }],
+      }))
+      valueOf(await api.settings.mutate({
+        ns: 'llm-deepseek',
+        ops: [{ op: 'set', path: ['baseURL'], value: secondBaseUrl }],
+      }))
+      valueOf(await api.credentials.set({ ref: credentialRef, value: webSecret }))
+    } finally {
+      await web.close()
+    }
+
+    const finalSettingsDocument = readFileSync(join(harnessHome, 'settings.yaml'), 'utf8')
+    expect(finalSettingsDocument).toContain(`apiKeyEnv: ${credentialRef}`)
+    expect(finalSettingsDocument).not.toContain(desktopSecret)
+    expect(finalSettingsDocument).not.toContain(webSecret)
+    const finalCredentialsDocument = readFileSync(join(harnessHome, '.credentials.yaml'), 'utf8')
+    expect(finalCredentialsDocument).not.toContain(desktopSecret)
+    expect(finalCredentialsDocument).toContain(webSecret)
+
+    const secondDesktop = await bootDesktopHost({ home: harnessHome })
+    try {
+      const bridge = secondDesktop.ctx.get('desktopBridge') as unknown as DesktopBridgeHost
+      const api = desktopApi(bridge)
+      const described = valueOf(await api.settings.describe({}))
+      expect(configurationNamespaces(described.namespaces)).toEqual(expectedNamespaces)
+      expect(described.namespaces.map(namespace => namespace.ns).sort()).toEqual(desktopNamespaces)
+      expect(settingsClientPackages(secondDesktop.ctx)).toEqual(desktopSettingsPackages)
+      expect(described.namespaces.find(namespace => namespace.ns === 'agent-loop')?.user)
+        .toMatchObject({ maxParallelToolCalls: 7 })
+      expect(described.namespaces.find(namespace => namespace.ns === 'llm-deepseek')?.user)
+        .toMatchObject({ apiKeyEnv: credentialRef, baseURL: secondBaseUrl })
+      expect(valueOf(await api.credentials.describe({ refs: [credentialRef] })).credentials[credentialRef])
+        .toEqual({ configured: true, source: 'file', writable: true })
+    } finally {
+      await secondDesktop.shutdown.shutdown(0)
+    }
+  }, 120_000)
 })
 
 describe('resolveTelemetryPatch', () => {

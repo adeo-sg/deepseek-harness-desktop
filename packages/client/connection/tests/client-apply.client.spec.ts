@@ -7,10 +7,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apply, type ConnectionHandle } from '../src/client/index.ts'
 import type { RpcMessage } from '../src/client/api.ts'
 import { RpcId } from '../src/client/api.ts'
+import type { DesktopBridge } from '../src/client/desktop-bridge.ts'
 import { FixtureApiClient } from '../src/client/fixture.ts'
+import { IpcApiClient } from '../src/client/ipc-api-client.ts'
 import { WebApiClient } from '../src/client/web-api-client.ts'
 
 type Win = { location?: { hostname: string; search: string; origin?: string } }
+type DesktopBridgeGlobal = { desktopBridge?: DesktopBridge }
 type WebSocketGlobal = { WebSocket?: typeof WebSocket }
 
 const originalWebSocket = globalThis.WebSocket
@@ -49,6 +52,7 @@ class FakeWebSocket extends EventTarget {
 
 afterEach(() => {
   delete (globalThis as Win).location
+  delete (globalThis as DesktopBridgeGlobal).desktopBridge
   sockets.length = 0
   if (originalWebSocket === undefined) delete (globalThis as WebSocketGlobal).WebSocket
   else globalThis.WebSocket = originalWebSocket
@@ -82,6 +86,14 @@ describe('connection client apply', () => {
   it('reports non-loopback page authority through the connection handle', async () => {
     ;(globalThis as Win).location = { hostname: '192.0.2.20', search: '' }
     expect((await mount()).isLoopback).toBe(false)
+  })
+
+  it('selects local IPC for the app:// desktop renderer', async () => {
+    ;(globalThis as Win).location = { hostname: 'dsh', search: '', origin: 'app://dsh' }
+    ;(globalThis as DesktopBridgeGlobal).desktopBridge = {} as DesktopBridge
+    const handle = await mount()
+    expect(handle.api).toBeInstanceOf(IpcApiClient)
+    expect(handle.isLoopback).toBe(true)
   })
 
   it('start() hands out one loop, rejects a second consumer, and stop() aborts the streams', async () => {
