@@ -33,8 +33,12 @@ export interface CommandResult {
  * @returns The exit status and captured streams.
  */
 export function attempt(command: string, args: readonly string[], options: RunOptions = {}): CommandResult {
-  const result = execaSync(command, [...args], { cwd: options.cwd, env: options.env, reject: false })
-  return { status: result.exitCode, stdout: result.stdout, stderr: result.stderr }
+  const result = execaSync(command, [...args], {
+    reject: false,
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    ...(options.env === undefined ? {} : { env: options.env }),
+  })
+  return { status: result.exitCode ?? null, stdout: result.stdout, stderr: result.stderr }
 }
 
 /**
@@ -61,10 +65,10 @@ export function capture(command: string, args: readonly string[], options: RunOp
  */
 export function run(command: string, args: readonly string[], options: RunOptions = {}): void {
   const result = execaSync(command, [...args], {
-    cwd: options.cwd,
-    env: options.env,
     reject: false,
     stdio: 'inherit',
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    ...(options.env === undefined ? {} : { env: options.env }),
   })
   if (result.exitCode !== 0) throw new Error(`${command} ${args.join(' ')} exited with ${String(result.exitCode)}`)
 }
