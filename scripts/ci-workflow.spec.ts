@@ -334,10 +334,11 @@ describe('Desktop release workflow', () => {
     expect(serialized).not.toContain('push: true')
     expect(serialized).not.toContain('packages: write')
     expect(serialized).toContain('assemble-github-release.ts')
-    expect(serialized).toContain('test \\"$(wc -l < \\"$actual\\")\\" -eq 29')
+    expect(serialized).toContain('test \\"$(wc -l < \\"$actual\\")\\" -eq 31')
     expect(serialized).toContain('latest-linux-arm64.yml')
     expect(serialized.match(/softprops\/action-gh-release@v2/g)).toHaveLength(1)
     const prepare = release.steps.filter(isRecord).find(step => step.name === 'Prepare retry-safe release state')
+    const download = release.steps.filter(isRecord).find(step => step.uses === 'actions/download-artifact@v4')
     const upload = release.steps.filter(isRecord).find(step => step.uses === 'softprops/action-gh-release@v2')
     const publish = release.steps.filter(isRecord).find(step => step.name === 'Verify exact release assets and publish the draft')
     if (typeof prepare?.run !== 'string' || typeof publish?.run !== 'string') {
@@ -349,6 +350,7 @@ describe('Desktop release workflow', () => {
     expect(prepare.run).toContain('--method DELETE')
     expect(prepare.run).not.toContain('|| true')
     expect(prepare.run).not.toContain('2>/dev/null')
+    expect(download).toMatchObject({ with: { pattern: 'dsh-*', path: 'artifacts' } })
     expect(upload).toMatchObject({
       if: "steps.release-state.outputs.already-published != 'true'",
       with: { draft: true, make_latest: false },

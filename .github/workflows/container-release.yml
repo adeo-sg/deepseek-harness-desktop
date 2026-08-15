@@ -275,6 +275,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
+          pattern: dsh-*
           path: artifacts
 
       - name: Assemble and verify exact release assets
@@ -333,7 +334,7 @@ jobs:
             --jq '.assets[] | [.name, .size, .id, .digest] | @tsv' | sort > "$remote"
           cut -f1 "$remote" > "$actual"
           diff --unified "$expected" "$actual"
-          test "$(wc -l < "$actual")" -eq 29
+          test "$(wc -l < "$actual")" -eq 31
           while IFS= read -r name; do
             local_size="$(stat --format=%s "release-assets/${name}")"
             remote_size="$(awk -F '\t' -v name="$name" '$1 == name { print $2 }' "$remote")"

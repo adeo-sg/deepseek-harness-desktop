@@ -91,7 +91,7 @@ const DESKTOP_TARGETS: readonly DesktopTarget[] = [
     formats: ['dmg', 'zip'],
     updateFormats: ['dmg', 'zip'],
     metadata: 'latest-mac.yml',
-    blockmapFormats: ['zip'],
+    blockmapFormats: ['dmg', 'zip'],
   },
   {
     artifact: 'dsh-desktop-macos-arm64',
@@ -100,7 +100,7 @@ const DESKTOP_TARGETS: readonly DesktopTarget[] = [
     formats: ['dmg', 'zip'],
     updateFormats: ['dmg', 'zip'],
     metadata: 'latest-mac.yml',
-    blockmapFormats: ['zip'],
+    blockmapFormats: ['dmg', 'zip'],
   },
   {
     artifact: 'dsh-desktop-linux-x64',

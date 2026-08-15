@@ -23,8 +23,8 @@ interface FixtureTarget {
 const TARGETS: readonly FixtureTarget[] = [
   { artifact: 'dsh-desktop-windows-x64', os: 'win', arch: 'x64', formats: ['exe', 'zip'], updateFormats: ['exe'], metadata: 'latest.yml', blockmapFormats: [] },
   { artifact: 'dsh-desktop-windows-arm64', os: 'win', arch: 'arm64', formats: ['exe', 'zip'], updateFormats: ['exe'], metadata: 'latest.yml', blockmapFormats: [] },
-  { artifact: 'dsh-desktop-macos-x64', os: 'mac', arch: 'x64', formats: ['dmg', 'zip'], updateFormats: ['dmg', 'zip'], metadata: 'latest-mac.yml', blockmapFormats: ['zip'] },
-  { artifact: 'dsh-desktop-macos-arm64', os: 'mac', arch: 'arm64', formats: ['dmg', 'zip'], updateFormats: ['dmg', 'zip'], metadata: 'latest-mac.yml', blockmapFormats: ['zip'] },
+  { artifact: 'dsh-desktop-macos-x64', os: 'mac', arch: 'x64', formats: ['dmg', 'zip'], updateFormats: ['dmg', 'zip'], metadata: 'latest-mac.yml', blockmapFormats: ['dmg', 'zip'] },
+  { artifact: 'dsh-desktop-macos-arm64', os: 'mac', arch: 'arm64', formats: ['dmg', 'zip'], updateFormats: ['dmg', 'zip'], metadata: 'latest-mac.yml', blockmapFormats: ['dmg', 'zip'] },
   { artifact: 'dsh-desktop-linux-x64', os: 'linux', arch: 'x64', formats: ['AppImage', 'deb', 'rpm', 'tar.gz'], updateFormats: ['AppImage', 'deb', 'rpm'], metadata: 'latest-linux.yml', blockmapFormats: [] },
   { artifact: 'dsh-desktop-linux-arm64', os: 'linux', arch: 'arm64', formats: ['AppImage', 'deb', 'rpm', 'tar.gz'], updateFormats: ['AppImage', 'deb', 'rpm'], metadata: 'latest-linux-arm64.yml', blockmapFormats: [] },
 ]
@@ -92,12 +92,12 @@ afterEach(() => {
 })
 
 describe('GitHub Release assembly', () => {
-  it('writes the exact 29-asset set and canonical architecture metadata', () => {
+  it('writes the exact 31-asset set and canonical architecture metadata', () => {
     const { input, output } = fixture()
     assembleGitHubRelease({ input, output, version: VERSION })
 
     expect(readdirSync(output).sort()).toEqual(expectedReleaseAssetNames(VERSION))
-    expect(expectedReleaseAssetNames(VERSION)).toHaveLength(29)
+    expect(expectedReleaseAssetNames(VERSION)).toHaveLength(31)
     const windows = yaml.load(readFileSync(join(output, 'latest.yml'), 'utf8')) as { files: Array<{ url: string }> }
     expect(windows.files.map(file => file.url)).toEqual([
       `DeepSeek-Harness-${VERSION}-win-x64.exe`,
@@ -124,7 +124,7 @@ describe('GitHub Release assembly', () => {
       `DeepSeek-Harness-${VERSION}-linux-aarch64.rpm`,
       `DeepSeek-Harness-${VERSION}-linux-arm64.tar.gz`,
     ]))
-    expect(readFileSync(join(output, 'SHA256SUMS'), 'utf8').trim().split('\n')).toHaveLength(28)
+    expect(readFileSync(join(output, 'SHA256SUMS'), 'utf8').trim().split('\n')).toHaveLength(30)
   })
 
   it('rejects extra files and a metadata version that does not match the tag', () => {
