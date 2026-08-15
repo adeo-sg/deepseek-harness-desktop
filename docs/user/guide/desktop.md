@@ -19,18 +19,33 @@ The Release also contains `SHA256SUMS`, update metadata, a Docker/Kubernetes dep
 
 ## Verify the download
 
-Download `SHA256SUMS` beside the selected asset. On macOS or Linux, verify the complete inventory or one named file:
+Download `SHA256SUMS` beside the selected asset. Verify only the selected line because the aggregate file also names Release assets that are not present locally. On Linux:
 
 ```sh
-sha256sum --check SHA256SUMS
-sha256sum "DeepSeek-Harness-<version>-linux-x86_64.AppImage"
+version='X.Y.Z'
+asset="DeepSeek-Harness-${version}-linux-x86_64.AppImage"
+awk -v name="$asset" '$2 == name' SHA256SUMS | sha256sum --check
 ```
 
-On Windows PowerShell, compare the printed hash with the matching `SHA256SUMS` line:
+On macOS, use the platform-provided `shasum` command:
+
+```sh
+version='X.Y.Z'
+asset="DeepSeek-Harness-${version}-mac-x64.dmg"
+awk -v name="$asset" '$2 == name' SHA256SUMS | shasum -a 256 --check
+```
+
+On Windows PowerShell, fail when the selected checksum is absent or different:
 
 ```powershell
-(Get-FileHash .\DeepSeek-Harness-<version>-win-x64.exe -Algorithm SHA256).Hash.ToLower()
-Select-String -Path .\SHA256SUMS -Pattern 'DeepSeek-Harness-<version>-win-x64.exe'
+$version = 'X.Y.Z'
+$asset = "DeepSeek-Harness-$version-win-x64.exe"
+$actual = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+$line = Get-Content .\SHA256SUMS | Where-Object { $_ -match "^[0-9a-f]{64}  $([regex]::Escape($asset))$" }
+if ($null -eq $line) { throw "No checksum found for $asset" }
+$expected = ($line -split '\s+', 2)[0]
+if ($actual -ne $expected) { throw "Checksum mismatch for $asset" }
+Write-Output "$asset checksum verified"
 ```
 
 Release candidates are unsigned. Windows SmartScreen, macOS Gatekeeper, or a Linux desktop may therefore ask for confirmation. Verify the checksum and repository source before approving an operating-system prompt.
@@ -44,33 +59,40 @@ On macOS, open the `.dmg` and move DeepSeek Harness to Applications, or extract 
 On Debian or Ubuntu, install the `.deb` package:
 
 ```sh
-sudo apt install "./DeepSeek-Harness-<version>-linux-<deb-arch>.deb"
+version='X.Y.Z'
+deb_arch='amd64'
+sudo apt install "./DeepSeek-Harness-${version}-linux-${deb_arch}.deb"
 ```
 
 On Fedora, RHEL, or another RPM-based distribution, install the `.rpm` package:
 
 ```sh
-sudo rpm -Uvh "./DeepSeek-Harness-<version>-linux-<rpm-arch>.rpm"
+version='X.Y.Z'
+rpm_arch='x86_64'
+sudo rpm -Uvh "./DeepSeek-Harness-${version}-linux-${rpm_arch}.rpm"
 ```
 
 The AppImage and tar archive are portable alternatives:
 
 ```sh
-chmod +x "DeepSeek-Harness-<version>-linux-<appimage-arch>.AppImage"
-"./DeepSeek-Harness-<version>-linux-<appimage-arch>.AppImage"
+version='X.Y.Z'
+appimage_arch='x86_64'
+tar_arch='x64'
+chmod +x "DeepSeek-Harness-${version}-linux-${appimage_arch}.AppImage"
+"./DeepSeek-Harness-${version}-linux-${appimage_arch}.AppImage"
 
 mkdir dsh-desktop
-tar -xzf "DeepSeek-Harness-<version>-linux-<arch>.tar.gz" -C dsh-desktop
+tar -xzf "DeepSeek-Harness-${version}-linux-${tar_arch}.tar.gz" -C dsh-desktop
 ./dsh-desktop/dsh-desktop
 ```
 
-Use `amd64`/`arm64` for `<deb-arch>`, `x86_64`/`aarch64` for `<rpm-arch>`, and `x86_64`/`arm64` for `<appimage-arch>`. The tar archive uses `x64` or `arm64`.
+Set `deb_arch` to `amd64` or `arm64`, `rpm_arch` to `x86_64` or `aarch64`, and `appimage_arch` to `x86_64` or `arm64`. Set `tar_arch` to `x64` or `arm64`.
 
 ## First run and updates
 
 Open **Settings -> Models** and configure a provider before starting a session. Desktop and npx launches share `$DSH_HOME` or `~/.dsh`, including profiles, settings, credentials, sessions, attachments, and workspaces. Closing the window keeps the app in the system tray by default; use the tray's Quit command or disable close-to-tray in General settings when a window close must stop the process.
 
-Packaged applications check the matching GitHub release channel after startup. General settings controls automatic checks, stable/prerelease selection, and automatic download. Because release candidates are unsigned, an automatic installation may fail under operating-system policy; use **View release page**, verify `SHA256SUMS`, and install the matching asset manually.
+Packaged applications check the matching GitHub release channel after startup. General settings controls automatic checks and stable/prerelease selection. Windows and Linux builds also support automatic download and installer handoff. Unsigned macOS builds only discover updates and open the Release page; verify `SHA256SUMS` and install the matching asset manually.
 
 ## Remove
 

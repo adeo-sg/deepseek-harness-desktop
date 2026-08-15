@@ -19,18 +19,33 @@ Release 还包含 `SHA256SUMS`、更新元数据、Docker/Kubernetes 部署包�
 
 ## 校验下载文件
 
-将 `SHA256SUMS` 下载到所选资产旁。在 macOS 或 Linux 上校验完整清单或一个指定文件：
+将 `SHA256SUMS` 下载到所选资产旁。汇总文件还列出了本地不存在的其他 Release 资产，因此只校验所选文件对应的行。在 Linux 上运行：
 
 ```sh
-sha256sum --check SHA256SUMS
-sha256sum "DeepSeek-Harness-<version>-linux-x86_64.AppImage"
+version='X.Y.Z'
+asset="DeepSeek-Harness-${version}-linux-x86_64.AppImage"
+awk -v name="$asset" '$2 == name' SHA256SUMS | sha256sum --check
 ```
 
-在 Windows PowerShell 中，将打印出的 hash 与 `SHA256SUMS` 中的匹配行进行比较：
+在 macOS 上使用系统提供的 `shasum` 命令：
+
+```sh
+version='X.Y.Z'
+asset="DeepSeek-Harness-${version}-mac-x64.dmg"
+awk -v name="$asset" '$2 == name' SHA256SUMS | shasum -a 256 --check
+```
+
+在 Windows PowerShell 中，所选 checksum 缺失或不匹配时让命令失败：
 
 ```powershell
-(Get-FileHash .\DeepSeek-Harness-<version>-win-x64.exe -Algorithm SHA256).Hash.ToLower()
-Select-String -Path .\SHA256SUMS -Pattern 'DeepSeek-Harness-<version>-win-x64.exe'
+$version = 'X.Y.Z'
+$asset = "DeepSeek-Harness-$version-win-x64.exe"
+$actual = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+$line = Get-Content .\SHA256SUMS | Where-Object { $_ -match "^[0-9a-f]{64}  $([regex]::Escape($asset))$" }
+if ($null -eq $line) { throw "No checksum found for $asset" }
+$expected = ($line -split '\s+', 2)[0]
+if ($actual -ne $expected) { throw "Checksum mismatch for $asset" }
+Write-Output "$asset checksum verified"
 ```
 
 候选版本尚未签名，因此 Windows SmartScreen、macOS Gatekeeper 或 Linux 桌面环境可能要求确认。批准操作系统提示前，请先校验摘要与仓库来源。
@@ -44,33 +59,40 @@ Select-String -Path .\SHA256SUMS -Pattern 'DeepSeek-Harness-<version>-win-x64.ex
 在 Debian 或 Ubuntu 上安装 `.deb` 包：
 
 ```sh
-sudo apt install "./DeepSeek-Harness-<version>-linux-<deb-arch>.deb"
+version='X.Y.Z'
+deb_arch='amd64'
+sudo apt install "./DeepSeek-Harness-${version}-linux-${deb_arch}.deb"
 ```
 
 在 Fedora、RHEL 或其他基于 RPM 的发行版上安装 `.rpm` 包：
 
 ```sh
-sudo rpm -Uvh "./DeepSeek-Harness-<version>-linux-<rpm-arch>.rpm"
+version='X.Y.Z'
+rpm_arch='x86_64'
+sudo rpm -Uvh "./DeepSeek-Harness-${version}-linux-${rpm_arch}.rpm"
 ```
 
 AppImage 与 tar 归档是便携安装方式：
 
 ```sh
-chmod +x "DeepSeek-Harness-<version>-linux-<appimage-arch>.AppImage"
-"./DeepSeek-Harness-<version>-linux-<appimage-arch>.AppImage"
+version='X.Y.Z'
+appimage_arch='x86_64'
+tar_arch='x64'
+chmod +x "DeepSeek-Harness-${version}-linux-${appimage_arch}.AppImage"
+"./DeepSeek-Harness-${version}-linux-${appimage_arch}.AppImage"
 
 mkdir dsh-desktop
-tar -xzf "DeepSeek-Harness-<version>-linux-<arch>.tar.gz" -C dsh-desktop
+tar -xzf "DeepSeek-Harness-${version}-linux-${tar_arch}.tar.gz" -C dsh-desktop
 ./dsh-desktop/dsh-desktop
 ```
 
-`<deb-arch>` 使用 `amd64`/`arm64`，`<rpm-arch>` 使用 `x86_64`/`aarch64`，`<appimage-arch>` 使用 `x86_64`/`arm64`。tar 归档使用 `x64` 或 `arm64`。
+将 `deb_arch` 设为 `amd64` 或 `arm64`，将 `rpm_arch` 设为 `x86_64` 或 `aarch64`，将 `appimage_arch` 设为 `x86_64` 或 `arm64`。将 `tar_arch` 设为 `x64` 或 `arm64`。
 
 ## 首次运行与更新
 
 开始会话前，打开**设置 -> 模型**并配置提供方。桌面与 npx 启动共用 `$DSH_HOME` 或 `~/.dsh`，包括 profile、设置、凭据、会话、附件和工作区。默认关闭窗口后应用会留在系统托盘中；需要关闭窗口即停止进程时，请使用托盘的退出命令，或在通用设置中关闭「关闭到托盘」。
 
-打包应用会在启动后检查匹配的 GitHub 发布通道。通用设置可以控制自动检查、稳定版/预发布版选择与自动下载。候选版本尚未签名，自动安装可能被操作系统策略拒绝；此时使用**查看发布页**，校验 `SHA256SUMS`，再手动安装匹配资产。
+打包应用会在启动后检查匹配的 GitHub 发布通道。通用设置可以控制自动检查与稳定版/预发布版选择。Windows 与 Linux 构建还支持自动下载和安装程序交接。未签名的 macOS 构建只发现更新并打开 Release 页面；请校验 `SHA256SUMS`，再手动安装匹配资产。
 
 ## 卸载
 
