@@ -86,7 +86,7 @@ async function start(): Promise<void> {
   window.webContents.on('render-process-gone', (_event, details) => {
     console.error(`dsh-desktop: renderer gone (${details.reason}${details.exitCode !== 0 ? `, exit ${details.exitCode}` : ''}) — reloading the shell`)
     if (window !== undefined && !window.isDestroyed()) {
-      void window.webContents.reload()
+      window.webContents.reload()
     }
   })
   await window.loadURL(APP_INDEX_URL)

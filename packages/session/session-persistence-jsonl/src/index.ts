@@ -286,7 +286,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
       } finally {
         // Abort path: the generator's own finally closes the decoder only
         // when iteration completes or return() is called.
-        if (decoded < frames.length) iterator.return?.()
+        if (decoded < frames.length) iterator.return()
       }
       content = Buffer.concat(plaintexts).toString('utf8')
     } else {
