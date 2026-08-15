@@ -9,7 +9,7 @@ overrides:
   '@deepseek-ai/schemastery': link:vendor/schemastery
 
 patchedDependencies:
-  electron-updater@6.8.9: 75c2cd90b3fe8443141c6eae6799f91c694281e64a28f9d29fe1b00d418d0967
+  electron-updater@6.8.9: 04c1ed427512ddd713b81d253d0a9bb71fce2d9eef97d5d91bed33a7cad5018f
   node-pty@1.1.0: 7a0c04f1f49d798a9ffe2f7f414c01064a44ca2489772d0c3e1235ab336755e6
 
 importers:
@@ -43,6 +43,9 @@ importers:
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.0
+      '@types/semver':
+        specifier: ^7.7.1
+        version: 7.8.0
       '@types/spdx-expression-parse':
         specifier: ^4.0.0
         version: 4.0.0
@@ -103,6 +106,9 @@ importers:
       publint:
         specifier: ^0.3.21
         version: 0.3.21
+      semver:
+        specifier: ^7.7.4
+        version: 7.8.5
       smol-toml:
         specifier: ^1.7.1
         version: 1.7.1
@@ -943,7 +949,7 @@ importers:
         version: link:../../vendor/schemastery
       electron-updater:
         specifier: ^6.8.9
-        version: 6.8.9(patch_hash=75c2cd90b3fe8443141c6eae6799f91c694281e64a28f9d29fe1b00d418d0967)
+        version: 6.8.9(patch_hash=04c1ed427512ddd713b81d253d0a9bb71fce2d9eef97d5d91bed33a7cad5018f)
     devDependencies:
       '@types/node':
         specifier: ^22.20.0
@@ -12157,6 +12163,9 @@ packages:
   '@types/retry@0.12.0':
     resolution: {integrity: sha512-wWKOClTTiizcZhXnPY4wikVAwmdYHp8q6DmC+EJUzAMsycb7HB32Kh9RN4+0gExjmPmZSAQjgURXIGATPegAvA==}
 
+  '@types/semver@7.8.0':
+    resolution: {integrity: sha512-1mAINjtQCXXeLkJ9ehXkwOcBpqtLxiVtKhpUf83DdRNdQKV0iXZpaHYqRr7nj+wvxuJzoAmAwXI+sCNMv1CzLQ==}
+
   '@types/spdx-expression-parse@4.0.0':
     resolution: {integrity: sha512-odQzy87phelGS4inXOzjmusx4hoCVD0IbxUANxHzVkmTzMRTNnUPoq1urIl7S1qf09KcDWKLFIftPmLtgbsAHA==}
 
@@ -14904,11 +14913,6 @@ packages:
 
   semver@7.7.4:
     resolution: {integrity: sha512-vFKC2IEtQnVhpT78h1Yp8wzwrf8CM+MzKMHGJZfBtzhZNycRFnXsHk6E5TxIkkMsgNS7mdX3AGB7x2QM2di4lA==}
-    engines: {node: '>=10'}
-    hasBin: true
-
-  semver@7.8.4:
-    resolution: {integrity: sha512-rUCObTnP32Q08R2uuIrt7r9PlEonuTmtuXYcW6s5kjdlj3xbnwe+21yXptAUYcMAABLkYYTtnmzb3w3EDZfueA==}
     engines: {node: '>=10'}
     hasBin: true
 
@@ -18061,6 +18065,8 @@ snapshots:
 
   '@types/retry@0.12.0': {}
 
+  '@types/semver@7.8.0': {}
+
   '@types/spdx-expression-parse@4.0.0': {}
 
   '@types/tough-cookie@4.0.5': {}
@@ -19096,7 +19102,7 @@ snapshots:
 
   electron-to-chromium@1.5.393: {}
 
-  electron-updater@6.8.9(patch_hash=75c2cd90b3fe8443141c6eae6799f91c694281e64a28f9d29fe1b00d418d0967):
+  electron-updater@6.8.9(patch_hash=04c1ed427512ddd713b81d253d0a9bb71fce2d9eef97d5d91bed33a7cad5018f):
     dependencies:
       builder-util-runtime: 9.7.0
       fs-extra: 10.1.0
@@ -19277,7 +19283,7 @@ snapshots:
       lodash.merge: 4.6.2
       minimatch: 10.2.5
       scslre: 0.3.0
-      semver: 7.8.4
+      semver: 7.8.5
       ts-api-utils: 2.5.0(typescript@6.0.3)
       typescript: 6.0.3
       yaml: 2.9.0
@@ -20239,7 +20245,7 @@ snapshots:
 
   make-dir@4.0.0:
     dependencies:
-      semver: 7.8.4
+      semver: 7.8.5
 
   mark.js@8.11.1: {}
 
@@ -21347,8 +21353,6 @@ snapshots:
 
   semver@7.7.4: {}
 
-  semver@7.8.4: {}
-
   semver@7.8.5: {}
 
   send@1.2.1:
@@ -21669,7 +21673,7 @@ snapshots:
       picomatch: 4.0.4
       rolldown: 1.1.1
       rolldown-plugin-dts: 0.25.2(oxc-resolver@11.20.0)(rolldown@1.1.1)(typescript@6.0.3)
-      semver: 7.8.4
+      semver: 7.8.5
       tinyexec: 1.2.4
       tinyglobby: 0.2.17
       tree-kill: 1.2.2

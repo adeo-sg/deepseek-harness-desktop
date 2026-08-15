@@ -14,7 +14,7 @@ Electron 主进程通过 `electron-updater` 和 `apps/desktop/electron-builder.y
 
 `desktop` 设置命名空间在关闭到托盘偏好旁保存自动检查、发布通道和自动下载。打包启动会在 15 秒后检查一次，并在启用自动检查时每六小时重复。`follow` 跟随已安装版本的类型，`stable` 拒绝预发布版，`rc` 接受预发布版。自动下载永远不代表自动重启。
 
-仓库为 electron-updater 的 GitHub provider 维护一个 pnpm 补丁。补丁只在校验和比较 feed 版本或推导通道时移除受控的 `dsh-v` 前缀；构造 Release 与资产 URL 时仍保留原始标签。provider 因此可以发现候选版本，同时不改变仓库标签和下载路径。
+仓库为 electron-updater 的 GitHub provider 维护一个 pnpm 补丁。补丁只在校验和比较 feed 版本或推导通道时移除受控的 `dsh-v` 前缀；构造 Release 与资产 URL 时仍保留原始标签。预发布版发现保留 electron-updater 的通道选择。仅稳定版发现会扫描 Atom feed，在 `dsh-v` 与旧版 `v` 标签中选择 SemVer 最高的非预发布版本，且不会请求 GitHub 的 `/releases/latest` 端点。
 
 `DesktopBridge.updates`、对应 IPC 通道和 preload 在主进程与 `@deepseek-ai/dsh-client-ui-updater` 之间传递状态与动作。IPC handler 在加载 renderer URL 前注册，renderer 会收敛初始状态查询失败。客户端插件提供横幅、一项通用设置行和托盘中可选的手动检查动作。下载中和已下载横幅不可关闭，动作守卫会阻止重复检查、下载与安装。
 
@@ -40,4 +40,4 @@ Electron 主进程通过 `electron-updater` 和 `apps/desktop/electron-builder.y
 
 ## 验证
 
-Updater 测试覆盖状态迁移、调度、实时设置、重复动作守卫、仅手动安装构建、provider 与安装失败、IPC 顺序、托盘失败收敛和 renderer 展示。provider 级测试会解析带 `dsh-v` 候选版本标签的代表性 GitHub Atom feed，并验证发现结果保留原始资产 URL。打包启动冒烟测试会加载随包分发的 preload bridge 与客户端 bundle。快照工具没有 Electron preload 通道，因此桌面专用横幅没有装配后的浏览器快照。
+Updater 测试覆盖状态迁移、调度、实时设置、重复动作守卫、仅手动安装构建、provider 与安装失败、IPC 顺序、托盘失败收敛和 renderer 展示。provider 级测试会解析代表性 GitHub Atom feed，验证候选版本发现保留原始资产 URL，并证明仅稳定版发现会选择最高稳定标签且不使用 `/releases/latest`。打包启动冒烟测试会加载随包分发的 preload bridge 与客户端 bundle。快照工具没有 Electron preload 通道，因此桌面专用横幅没有装配后的浏览器快照。

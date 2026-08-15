@@ -327,6 +327,7 @@ describe('Desktop release workflow', () => {
     expect(release).toMatchObject({
       if: "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/dsh-v')",
       needs: ['resolve', 'desktop', 'container-bundle', 'container-image'],
+      concurrency: { group: 'dsh-github-release', 'cancel-in-progress': false },
       permissions: { contents: 'write' },
     })
     const serialized = JSON.stringify(workflow)
@@ -353,7 +354,7 @@ describe('Desktop release workflow', () => {
     expect(download).toMatchObject({ with: { pattern: 'dsh-*', path: 'artifacts' } })
     expect(upload).toMatchObject({
       if: "steps.release-state.outputs.already-published != 'true'",
-      with: { draft: true, make_latest: false },
+      with: { draft: true, prerelease: false, make_latest: false },
     })
     expect(publish.run).toContain('[.name, .size, .id, .digest]')
     expect(publish.run).toContain('releases?per_page=100')
@@ -362,6 +363,19 @@ describe('Desktop release workflow', () => {
     expect(publish.run).toContain('test "$remote_digest" = "sha256:${expected_digest}"')
     expect(publish.run).toContain('cmp "release-assets/${metadata}" "$downloaded"')
     expect(publish.run).toContain('-F draft=false')
+    expect(publish.run).toContain('gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100"')
+    expect(publish.run).toContain('scripts/release/select-github-latest.ts')
+    expect(publish.run).toContain('--current-tag "$GITHUB_REF_NAME"')
+    expect(publish.run).toContain('highest_tag="$(jq --raw-output \'.highestTag\' "$selection")"')
+    expect(publish.run).toContain('make_latest="$(jq --raw-output \'.makeLatest\' "$selection")"')
+    expect(publish.run).toContain('-F prerelease=false')
+    expect(publish.run).toContain('-f make_latest="$make_latest"')
+    expect(publish.run).toContain('"repos/${GITHUB_REPOSITORY}/releases/latest"')
+    expect(publish.run).toContain('for attempt in {1..5}')
+    expect(publish.run).toContain('[[ "$latest_tag" == "$highest_tag" ]]')
+    expect(publish.run).toContain('sleep 2')
+    expect(publish.run).not.toContain('RELEASE_MAKE_LATEST')
+    expect(publish.run).not.toContain('if [[ "$release_draft"')
   })
 
   it('keeps package architecture out of the electron-builder targets', () => {

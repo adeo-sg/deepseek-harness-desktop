@@ -36,6 +36,21 @@ const FEED = `<?xml version="1.0" encoding="UTF-8"?>
     <link href="https://github.com/sdkwork-ai/deepseek-harness-desktop/releases/tag/dsh-v0.1.0-rc.9"/>
     <content type="html">rc 9 notes</content>
   </entry>
+  <entry>
+    <title>dsh stable 7</title>
+    <link href="https://github.com/sdkwork-ai/deepseek-harness-desktop/releases/tag/dsh-v0.0.7"/>
+    <content type="html">stable 7 notes</content>
+  </entry>
+  <entry>
+    <title>dsh legacy stable 8</title>
+    <link href="https://github.com/sdkwork-ai/deepseek-harness-desktop/releases/tag/v0.0.8"/>
+    <content type="html">stable 8 notes</content>
+  </entry>
+  <entry>
+    <title>dsh stable 9</title>
+    <link href="https://github.com/sdkwork-ai/deepseek-harness-desktop/releases/tag/dsh-v0.0.9"/>
+    <content type="html">stable 9 notes</content>
+  </entry>
 </feed>`
 
 const UPDATE_METADATA = `version: 0.1.0-rc.11
@@ -43,6 +58,15 @@ files:
   - url: DeepSeek-Harness-0.1.0-rc.11-win-x64.exe
     sha512: AA==
 path: DeepSeek-Harness-0.1.0-rc.11-win-x64.exe
+sha512: AA==
+releaseDate: '2026-08-15T00:00:00.000Z'
+`
+
+const STABLE_UPDATE_METADATA = `version: 0.0.9
+files:
+  - url: DeepSeek-Harness-0.0.9-win-x64.exe
+    sha512: AA==
+path: DeepSeek-Harness-0.0.9-win-x64.exe
 sha512: AA==
 releaseDate: '2026-08-15T00:00:00.000Z'
 `
@@ -97,5 +121,46 @@ describe('patched electron-updater GitHubProvider', () => {
     expect(provider.resolveFiles(info)[0]?.url.href).toBe(
       'https://github.com/sdkwork-ai/deepseek-harness-desktop/releases/download/dsh-v0.1.0-rc.11/DeepSeek-Harness-0.1.0-rc.11-win-x64.exe',
     )
+  })
+
+  it('selects the highest stable feed tag without requesting the GitHub latest endpoint', async () => {
+    const currentVersion = semver.parse('0.0.8')
+    if (currentVersion === null) throw new Error('test setup: current version is not valid semver')
+
+    const requestedPaths: string[] = []
+    const request = vi.fn(async (options: RequestOptions): Promise<string> => {
+      const path = options.path ?? ''
+      requestedPaths.push(path)
+      if (path.endsWith('/releases.atom')) return FEED
+      if (path.endsWith('/download/dsh-v0.0.9/latest.yml')) return STABLE_UPDATE_METADATA
+      throw new Error(`unexpected provider request ${path}`)
+    })
+    const provider = new GitHubProvider(
+      { provider: 'github', owner: 'sdkwork-ai', repo: 'deepseek-harness-desktop' },
+      {
+        allowPrerelease: false,
+        channel: null,
+        currentVersion,
+        fullChangelog: false,
+      } as unknown as AppUpdater,
+      {
+        isUseMultipleRangeRequest: false,
+        platform: 'win32',
+        executor: { request } as unknown as ProviderRuntimeOptions['executor'],
+      },
+    )
+
+    const info = await provider.getLatestVersion()
+
+    expect(requestedPaths).toEqual([
+      '/sdkwork-ai/deepseek-harness-desktop/releases.atom',
+      '/sdkwork-ai/deepseek-harness-desktop/releases/download/dsh-v0.0.9/latest.yml',
+    ])
+    expect(info).toMatchObject({
+      tag: 'dsh-v0.0.9',
+      version: '0.0.9',
+      releaseName: 'dsh stable 9',
+      releaseNotes: 'stable 9 notes',
+    })
   })
 })

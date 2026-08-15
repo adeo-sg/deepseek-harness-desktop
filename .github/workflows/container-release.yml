@@ -29,7 +29,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
-      stable: ${{ steps.version.outputs.stable }}
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v6
@@ -54,10 +53,7 @@ jobs:
             echo "release version $version does not match package.json $manifest_version" >&2
             exit 1
           }
-          stable=true
-          [[ "$version" == *-* ]] && stable=false
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "stable=$stable" >> "$GITHUB_OUTPUT"
 
   desktop:
     name: Package Desktop matrix
@@ -254,6 +250,9 @@ jobs:
     needs: [resolve, desktop, container-bundle, container-image]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    concurrency:
+      group: dsh-github-release
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -313,25 +312,30 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           draft: true
-          prerelease: ${{ needs.resolve.outputs.stable != 'true' }}
+          prerelease: false
           make_latest: false
 
       - name: Verify exact release assets and publish the draft
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_PRERELEASE: ${{ needs.resolve.outputs.stable != 'true' }}
-          RELEASE_MAKE_LATEST: ${{ needs.resolve.outputs.stable == 'true' }}
         run: |
           set -euo pipefail
           expected="$(mktemp)"
           actual="$(mktemp)"
           remote="$(mktemp)"
+          release_pages="$(mktemp)"
+          selection="$(mktemp)"
           find release-assets -maxdepth 1 -type f -printf '%f\n' | sort > "$expected"
-          release_id="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
-            --jq '.[] | select(.tag_name == env.GITHUB_REF_NAME) | .id')"
-          test -n "$release_id" && [[ "$release_id" != *$'\n'* ]]
-          release_draft="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" --jq '.draft')"
+          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$release_pages"
+          pnpm exec tsx scripts/release/select-github-latest.ts \
+            --current-tag "$GITHUB_REF_NAME" < "$release_pages" > "$selection"
+          release_id="$(jq --raw-output '.currentReleaseId' "$selection")"
+          highest_tag="$(jq --raw-output '.highestTag' "$selection")"
+          make_latest="$(jq --raw-output '.makeLatest' "$selection")"
+          [[ "$release_id" =~ ^[0-9]+$ ]]
+          test -n "$highest_tag"
+          [[ "$make_latest" == true || "$make_latest" == false ]]
           gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
             --jq '.assets[] | [.name, .size, .id, .digest] | @tsv' | sort > "$remote"
           cut -f1 "$remote" > "$actual"
@@ -357,11 +361,21 @@ jobs:
               "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}" > "$downloaded"
             cmp "release-assets/${metadata}" "$downloaded"
           done
-          if [[ "$release_draft" == 'true' ]]; then
-            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
-              -F draft=false \
-              -F prerelease="$RELEASE_PRERELEASE" \
-              -f make_latest="$RELEASE_MAKE_LATEST" >/dev/null
-          fi
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+            -F draft=false \
+            -F prerelease=false \
+            -f make_latest="$make_latest" >/dev/null
           test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" --jq '.draft')" = 'false'
-          test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" --jq '.prerelease')" = "$RELEASE_PRERELEASE"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" --jq '.prerelease')" = 'false'
+          latest_tag=''
+          for attempt in {1..5}; do
+            if latest_tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name')" \
+              && [[ "$latest_tag" == "$highest_tag" ]]; then
+              break
+            fi
+            if [[ "$attempt" -eq 5 ]]; then
+              echo "GitHub Latest is ${latest_tag:-unavailable}; expected ${highest_tag}" >&2
+              exit 1
+            fi
+            sleep 2
+          done

@@ -1,5 +1,5 @@
 diff --git a/out/providers/GitHubProvider.js b/out/providers/GitHubProvider.js
-index e768d24e7a957caf32a4b8ca6c68cb50eb5865ee..5cbcec4f5d7c5153d7cb960875036b3a59e3e249 100644
+index e768d24e7a957caf32a4b8ca6c68cb50eb5865ee..47a8e38bbfe4bf6e0d892ff6a030fd7127893c0c 100644
 --- a/out/providers/GitHubProvider.js
 +++ b/out/providers/GitHubProvider.js
 @@ -8,6 +8,14 @@ const url_1 = require("url");
@@ -32,7 +32,33 @@ index e768d24e7a957caf32a4b8ca6c68cb50eb5865ee..5cbcec4f5d7c5153d7cb960875036b3a
                          const shouldFetchVersion = !currentChannel || ["alpha", "beta"].includes(currentChannel);
                          const isCustomChannel = hrefChannel !== null && !["alpha", "beta"].includes(String(hrefChannel));
                          // Allow moving from alpha to beta but not down
-@@ -129,8 +138,9 @@ class GitHubProvider extends BaseGitHubProvider {
+@@ -91,16 +100,22 @@ class GitHubProvider extends BaseGitHubProvider {
+                 }
+             }
+             else {
+-                tag = await this.getLatestTagName(cancellationToken);
++                let stableVersion = null;
+                 for (const element of feed.getElements("entry")) {
+                     // noinspection TypeScriptValidateJSTypes
+                     const hrefMatch = hrefRegExp.exec(element.element("link").attribute("href"));
+                     if (hrefMatch == null) {
+                         continue;
+                     }
+-                    if (hrefMatch[1] === tag) {
++                    const hrefTag = hrefMatch[1];
++                    const hrefVersion = versionFromTag(hrefTag);
++                    if (hrefVersion === null || semver.prerelease(hrefVersion) !== null) {
++                        continue;
++                    }
++                    if (stableVersion === null || semver.gt(hrefVersion, stableVersion)) {
++                        tag = hrefTag;
+                         latestRelease = element;
+-                        break;
++                        stableVersion = hrefVersion;
+                     }
+                 }
+             }
+@@ -129,8 +144,9 @@ class GitHubProvider extends BaseGitHubProvider {
          };
          try {
              let channel = this.channel;
@@ -44,7 +70,7 @@ index e768d24e7a957caf32a4b8ca6c68cb50eb5865ee..5cbcec4f5d7c5153d7cb960875036b3a
              }
              rawData = await fetchData(channel);
          }
-@@ -194,11 +204,11 @@ function computeReleaseNotes(currentVersion, isFullChangelog, feed, latestReleas
+@@ -194,11 +210,11 @@ function computeReleaseNotes(currentVersion, isFullChangelog, feed, latestReleas
      if (!isFullChangelog) {
          return getNoteValue(latestRelease);
      }
@@ -59,7 +85,7 @@ index e768d24e7a957caf32a4b8ca6c68cb50eb5865ee..5cbcec4f5d7c5153d7cb960875036b3a
      }
      catch {
          // If we cannot parse the latest release version, return null — notes cannot be determined
-@@ -214,13 +224,13 @@ function computeReleaseNotes(currentVersion, isFullChangelog, feed, latestReleas
+@@ -214,13 +230,13 @@ function computeReleaseNotes(currentVersion, isFullChangelog, feed, latestReleas
              if (!match) {
                  continue;
              }
