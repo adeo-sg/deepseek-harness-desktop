@@ -165,7 +165,7 @@ function main(): void {
   assert(releaseWorkflow.includes('dsh-container-deployment-${{ needs.resolve.outputs.version }}'), 'Actions artifacts must separate the deployment bundle')
   assert(releaseWorkflow.includes('dsh-container-image-${{ needs.resolve.outputs.version }}-linux-${{ matrix.arch }}'), 'Actions artifacts must retain both image architectures')
   assert(releaseWorkflow.includes('scripts/release/assemble-github-release.ts'), 'GitHub publication must pass through exact asset assembly')
-  assert(releaseWorkflow.includes('test "$(wc -l < "$actual")" -eq 29'), 'published GitHub asset verification must require the exact asset count')
+  assert(releaseWorkflow.includes('test "$(wc -l < "$actual")" -eq 31'), 'published GitHub asset verification must require the exact asset count')
   assert(releaseWorkflow.includes('stat --format=%s') && releaseWorkflow.includes('Accept: application/octet-stream'), 'draft verification must compare every asset size and download small metadata assets')
   assert(releaseWorkflow.includes('cmp "release-assets/${metadata}" "$downloaded"') && releaseWorkflow.includes('-F draft=false'), 'the workflow must publish only after draft metadata matches the assembled files')
 
