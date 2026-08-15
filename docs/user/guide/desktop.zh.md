@@ -2,11 +2,13 @@
 
 [English](desktop.md) | 中文
 
-桌面应用运行与 `npx @deepseek-ai/dsh web` 相同的 Web profile，并保存相同的 Harness 数据，但它通过 Electron IPC 提供 UI，不打开 HTTP 端口。npx 启动器仍使用 `3080`，Docker 使用 `4080`，Kubernetes 本地转发使用 `4081`，因此这些模式可以同时运行。
+桌面应用运行与 `npx @deepseek-ai/dsh@next web` 相同的 Web profile，并保存相同的 Harness 数据，但它通过 Electron IPC 提供 UI，不打开 HTTP 端口。npm `next` 渠道独立发布，可能早于当前 GitHub Release。npx 启动器仍使用 `3080`，Docker 使用 `4080`，Kubernetes 本地转发使用 `4081`，因此这些模式可以同时运行。
 
 ## 选择资产
 
 打开 [GitHub Releases 页面](https://github.com/sdkwork-ai/deepseek-harness-desktop/releases)，选择目标 `dsh-v<version>` Release，再下载与操作系统和 CPU 架构匹配的文件。
+
+GitHub Latest 当前指向 `dsh-v0.1.0-rc.11`。在通过全部校验的普通 dsh Release 中，SemVer 最高的 tag 持有 Latest；只有需要固定特定版本时才选择其他 tag。
 
 | 平台 | 架构 | 安装包 | 便携归档 |
 |---|---|---|---|
@@ -82,7 +84,8 @@ chmod +x "DeepSeek-Harness-${version}-linux-${appimage_arch}.AppImage"
 "./DeepSeek-Harness-${version}-linux-${appimage_arch}.AppImage"
 
 mkdir dsh-desktop
-tar -xzf "DeepSeek-Harness-${version}-linux-${tar_arch}.tar.gz" -C dsh-desktop
+tar -xzf "DeepSeek-Harness-${version}-linux-${tar_arch}.tar.gz" \
+  --strip-components=1 -C dsh-desktop
 ./dsh-desktop/dsh-desktop
 ```
 

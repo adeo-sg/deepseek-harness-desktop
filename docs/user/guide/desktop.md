@@ -2,11 +2,13 @@
 
 English | [中文](desktop.zh.md)
 
-The desktop application runs the same Web profile and stores the same Harness data as `npx @deepseek-ai/dsh web`, but it serves the UI through Electron IPC and opens no HTTP port. The npx launcher remains on `3080`, Docker uses `4080`, and the Kubernetes local forward uses `4081`, so all modes can run together.
+The desktop application runs the same Web profile and stores the same Harness data as `npx @deepseek-ai/dsh@next web`, but it serves the UI through Electron IPC and opens no HTTP port. The npm `next` channel is published independently and may be older than this GitHub Release. The npx launcher remains on `3080`, Docker uses `4080`, and the Kubernetes local forward uses `4081`, so all modes can run together.
 
 ## Choose an asset
 
 Open the [GitHub Releases page](https://github.com/sdkwork-ai/deepseek-harness-desktop/releases), select the intended `dsh-v<version>` release, and download the file for the operating system and CPU architecture.
+
+GitHub Latest currently points to `dsh-v0.1.0-rc.11`. Among fully verified regular dsh Releases, the highest SemVer tag holds the Latest pointer; select another tag only when pinning that version intentionally.
 
 | Platform | Architecture | Installer | Portable archive |
 |---|---|---|---|
@@ -82,7 +84,8 @@ chmod +x "DeepSeek-Harness-${version}-linux-${appimage_arch}.AppImage"
 "./DeepSeek-Harness-${version}-linux-${appimage_arch}.AppImage"
 
 mkdir dsh-desktop
-tar -xzf "DeepSeek-Harness-${version}-linux-${tar_arch}.tar.gz" -C dsh-desktop
+tar -xzf "DeepSeek-Harness-${version}-linux-${tar_arch}.tar.gz" \
+  --strip-components=1 -C dsh-desktop
 ./dsh-desktop/dsh-desktop
 ```
 

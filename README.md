@@ -12,6 +12,10 @@ DeepSeek Harness is currently in _developer preview_ and is iterating rapidly. *
 
 ## Run
 
+For every supported installation path, including npx, source, Docker, Kubernetes, and all desktop packages, follow the [English installation guide](INSTALL.md) or [Chinese installation guide](INSTALL.zh.md).
+
+GitHub Latest currently points to `dsh-v0.1.0-rc.11`. Among fully verified regular dsh Releases, the highest SemVer tag holds the Latest pointer.
+
 ### Run from `npm`
 
 Install `Node.js`, then run:
@@ -21,6 +25,8 @@ npx @deepseek-ai/dsh@next web
 ```
 
 The command starts the Web UI, served at `http://127.0.0.1:3080` by default. See [Web UI guide](docs/user/guide/index.md).
+
+The npm `next` channel is published independently from GitHub Releases and may contain an older dsh version. Run `npx @deepseek-ai/dsh@next --version` before relying on an exact version.
 
 ### Install the desktop application
 

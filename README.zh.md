@@ -12,6 +12,10 @@ DeepSeek Harness 目前处于 _开发者预览_ 阶段，正在快速迭代。**
 
 ## 运行
 
+所有受支持的安装方式，包括 npx、源码、Docker、Kubernetes 和全部桌面安装包，均详见[英文安装指南](INSTALL.md)或[中文安装指南](INSTALL.zh.md)。
+
+GitHub Latest 当前指向 `dsh-v0.1.0-rc.11`。在通过全部校验的普通 dsh Release 中，SemVer 最高的 tag 持有 Latest。
+
 ### 通过 `npm` 运行
 
 安装 `Node.js`，然后运行：
@@ -21,6 +25,8 @@ npx @deepseek-ai/dsh@next web
 ```
 
 该命令会启动 Web UI，默认地址为 `http://127.0.0.1:3080`。详见 [Web UI 指南](docs/user/guide/index.md)。
+
+npm `next` 渠道与 GitHub Releases 独立发布，可能包含更早的 dsh 版本。依赖准确版本前，请运行 `npx @deepseek-ai/dsh@next --version`。
 
 ### 安装桌面应用
 
