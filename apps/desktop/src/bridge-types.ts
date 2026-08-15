@@ -48,7 +48,7 @@ export interface DesktopWindowControls {
 }
 
 /** Update phases the desktop shell's auto-update controller reports. */
-export type DesktopUpdatePhase =
+type DesktopUpdatePhase =
   | 'disabled'
   | 'idle'
   | 'checking'
@@ -58,7 +58,7 @@ export type DesktopUpdatePhase =
   | 'installing'
 
 /** Download progress carried in the `downloading` update state. */
-export interface DesktopUpdateProgress {
+interface DesktopUpdateProgress {
   percent: number
   transferred: number
   total: number

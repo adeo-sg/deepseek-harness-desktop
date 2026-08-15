@@ -49,7 +49,7 @@ const MAX_TITLE_LENGTH = 48
 export const APP_NAME = 'DeepSeek Harness'
 
 /** How many recent sessions the tray menu lists (industry-typical quick-jump depth). */
-export const DEFAULT_MAX_RECENT_SESSIONS = 8
+const DEFAULT_MAX_RECENT_SESSIONS = 8
 
 /** How often the Linux tray menu refreshes its static session list (AppIndicator has no popup hook). */
 const LINUX_MENU_REFRESH_MS = 30_000

@@ -18,10 +18,10 @@ import type { DesktopSettings, UpdateChannel } from './desktop-settings.ts'
 export const DESKTOP_RELEASE_PAGE_URL = 'https://github.com/sdkwork-ai/deepseek-harness-desktop/releases'
 
 /** How long after boot the first quiet check waits (startup traffic first). */
-export const DEFAULT_INITIAL_CHECK_DELAY_MS = 15_000
+const DEFAULT_INITIAL_CHECK_DELAY_MS = 15_000
 
 /** How often the updater re-checks while auto-check is on. */
-export const DEFAULT_CHECK_INTERVAL_MS = 6 * 60 * 60_000
+const DEFAULT_CHECK_INTERVAL_MS = 6 * 60 * 60_000
 
 /** The update metadata the controller extracts from driver events. */
 export interface UpdateReleaseInfo {
@@ -79,7 +79,7 @@ interface ElectronUpdaterLike {
  * cannot load — only the packaged main process constructs it.
  * @returns the driver backed by the singleton.
  */
-export async function createElectronUpdaterDriver(): Promise<UpdateDriver> {
+async function createElectronUpdaterDriver(): Promise<UpdateDriver> {
   const { autoUpdater } = await import('electron-updater')
   const updater = autoUpdater as unknown as ElectronUpdaterLike
   return {

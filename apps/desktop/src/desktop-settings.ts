@@ -12,22 +12,22 @@ import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 
 /** Settings namespace owned by the desktop shell. */
-export const DESKTOP_SETTINGS_NAMESPACE = 'desktop'
+const DESKTOP_SETTINGS_NAMESPACE = 'desktop'
 
 /** Field carrying the close-to-tray preference in the desktop settings section. */
-export const CLOSE_TO_TRAY_FIELD = 'closeToTray'
+const CLOSE_TO_TRAY_FIELD = 'closeToTray'
 
 /** Field carrying the auto-check switch in the desktop settings section. */
-export const AUTO_CHECK_UPDATES_FIELD = 'autoCheckUpdates'
+const AUTO_CHECK_UPDATES_FIELD = 'autoCheckUpdates'
 
 /** Field carrying the update channel in the desktop settings section. */
-export const UPDATE_CHANNEL_FIELD = 'updateChannel'
+const UPDATE_CHANNEL_FIELD = 'updateChannel'
 
 /** Field carrying the auto-download switch in the desktop settings section. */
-export const AUTO_DOWNLOAD_UPDATES_FIELD = 'autoDownload'
+const AUTO_DOWNLOAD_UPDATES_FIELD = 'autoDownload'
 
 /** Update channels the desktop shell can follow. */
-export const UPDATE_CHANNELS = ['follow', 'stable', 'rc'] as const
+const UPDATE_CHANNELS = ['follow', 'stable', 'rc'] as const
 
 /** Which release channel the updater accepts. */
 export type UpdateChannel = typeof UPDATE_CHANNELS[number]
