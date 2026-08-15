@@ -340,13 +340,24 @@ describe('Desktop release workflow', () => {
     const prepare = release.steps.filter(isRecord).find(step => step.name === 'Prepare retry-safe release state')
     const upload = release.steps.filter(isRecord).find(step => step.uses === 'softprops/action-gh-release@v2')
     const publish = release.steps.filter(isRecord).find(step => step.name === 'Verify exact release assets and publish the draft')
-    expect(prepare?.run).toContain('--method DELETE')
+    if (typeof prepare?.run !== 'string' || typeof publish?.run !== 'string') {
+      throw new TypeError('unified release must define retry preparation and draft verification scripts')
+    }
+    expect(prepare.run).toContain('gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100"')
+    expect(prepare.run).toContain('select(.tag_name == env.GITHUB_REF_NAME)')
+    expect(prepare.run).toContain('multiple releases exist for ${GITHUB_REF_NAME}')
+    expect(prepare.run).toContain('--method DELETE')
+    expect(prepare.run).not.toContain('|| true')
+    expect(prepare.run).not.toContain('2>/dev/null')
     expect(upload).toMatchObject({
       if: "steps.release-state.outputs.already-published != 'true'",
       with: { draft: true, make_latest: false },
     })
-    expect(publish?.run).toContain('cmp "release-assets/${metadata}" "$downloaded"')
-    expect(publish?.run).toContain('-F draft=false')
+    expect(publish.run).toContain('[.name, .size, .id, .digest]')
+    expect(publish.run).toContain("expected_digest=\"$(awk -v name=\"$name\" '$2 == name { print $1 }' release-assets/SHA256SUMS)\"")
+    expect(publish.run).toContain('test "$remote_digest" = "sha256:${expected_digest}"')
+    expect(publish.run).toContain('cmp "release-assets/${metadata}" "$downloaded"')
+    expect(publish.run).toContain('-F draft=false')
   })
 
   it('keeps package architecture out of the electron-builder targets', () => {

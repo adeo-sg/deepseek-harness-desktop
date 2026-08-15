@@ -14,7 +14,7 @@ Desktop 与容器打包使用独立的 tag 触发器和 Release job。同一产�
 
 [Release 汇总器](../../../../scripts/release/assemble-github-release.ts)为每个预期 Desktop 目标、部署包和两个容器镜像接收一个 artifact 目录。版本不匹配、artifact 目录或文件缺失和多余、归档 checksum 无效，以及更新元数据中的 SHA-512 与安装包不一致都会被拒绝。汇总器将更新 YAML 解析为结构化数据并写出规范文件：Windows 与 macOS 元数据同时包含 x64 和 arm64 条目；Linux 为 x64 保留 `latest-linux.yml`，为 arm64 保留 `latest-linux-arm64.yml`。Linux 资产校验保留 electron-builder 按格式使用的架构名（x64 包使用 `x86_64`/`amd64`/`x64`，arm64 RPM 使用 `aarch64`）。macOS ZIP blockmap 仍是架构特定资产。
 
-汇总后的 Release 恰好包含 29 个资产：16 个 Desktop 安装包和便携归档、两个 macOS blockmap、四个更新元数据文件、部署归档及其 checksum、两个镜像归档及其 checksum，以及一个覆盖其余 28 个文件的 `SHA256SUMS`。上传内容会保留在草稿中，直到工作流校验精确的资产名称、每个远端文件的大小，以及下载后的 `SHA256SUMS` 与 updater 元数据副本，随后才发布已校验的草稿。重试只替换未完成的草稿；已公开的 Release 保持只读，并且必须已经与校验后的集合一致。
+汇总后的 Release 恰好包含 29 个资产：16 个 Desktop 安装包和便携归档、两个 macOS blockmap、四个更新元数据文件、部署归档及其 checksum、两个镜像归档及其 checksum，以及一个覆盖其余 28 个文件的 `SHA256SUMS`。上传内容会保留在草稿中，直到工作流校验精确的资产名称、每个远端文件的大小、GitHub 报告的每个 SHA-256 摘要与 `SHA256SUMS` 或本地 checksum 文件摘要一致，以及下载后的 `SHA256SUMS` 与 updater 元数据副本，随后才发布已校验的草稿。查找现有 Release 时，只有 tag 匹配数为零才视为不存在，因此 API 失败会在上传前中止。重试只替换未完成的草稿；已公开的 Release 保持只读，并且必须已经与校验后的集合一致。
 
 容器镜像是独立的 Release 资产，不发布到 registry，也不嵌入部署归档。部署归档不包含仅用于源码构建的 Dockerfile 和 entrypoint，因为归档中没有它们所需的 workspace 构建上下文。Compose 和 Kubernetes 引用由 `docker load` 恢复的版本化本地镜像；运维人员需要在每个集群节点预加载镜像，或重新标记并推送到自己控制的 registry。工作流不会向镜像 registry 认证、请求 package 写权限或推送镜像 tag。
 

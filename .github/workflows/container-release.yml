@@ -287,11 +287,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          existing="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
-            --jq '[.id, .draft] | @tsv' 2>/dev/null || true)"
+          existing="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq '.[] | select(.tag_name == env.GITHUB_REF_NAME) | [.id, .draft] | @tsv')"
           if [[ -z "$existing" ]]; then
             echo 'already-published=false' >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+          if [[ "$existing" == *$'\n'* ]]; then
+            echo "multiple releases exist for ${GITHUB_REF_NAME}" >&2
+            exit 1
           fi
           read -r release_id release_draft <<< "$existing"
           if [[ "$release_draft" != 'true' ]]; then
@@ -326,7 +330,7 @@ jobs:
           release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" --jq '.id')"
           release_draft="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" --jq '.draft')"
           gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
-            --jq '.assets[] | [.name, .size, .id] | @tsv' | sort > "$remote"
+            --jq '.assets[] | [.name, .size, .id, .digest] | @tsv' | sort > "$remote"
           cut -f1 "$remote" > "$actual"
           diff --unified "$expected" "$actual"
           test "$(wc -l < "$actual")" -eq 29
@@ -334,6 +338,13 @@ jobs:
             local_size="$(stat --format=%s "release-assets/${name}")"
             remote_size="$(awk -F '\t' -v name="$name" '$1 == name { print $2 }' "$remote")"
             test -n "$remote_size" && test "$local_size" -eq "$remote_size"
+            if [[ "$name" == SHA256SUMS ]]; then
+              expected_digest="$(sha256sum "release-assets/${name}" | cut -d ' ' -f1)"
+            else
+              expected_digest="$(awk -v name="$name" '$2 == name { print $1 }' release-assets/SHA256SUMS)"
+            fi
+            remote_digest="$(awk -F '\t' -v name="$name" '$1 == name { print $4 }' "$remote")"
+            test -n "$expected_digest" && test "$remote_digest" = "sha256:${expected_digest}"
           done < "$expected"
           for metadata in SHA256SUMS latest.yml latest-mac.yml latest-linux.yml latest-linux-arm64.yml; do
             asset_id="$(awk -F '\t' -v name="$metadata" '$1 == name { print $3 }' "$remote")"
