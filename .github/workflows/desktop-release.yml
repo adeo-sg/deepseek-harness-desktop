@@ -25,6 +25,7 @@ env:
 jobs:
   package:
     name: Package ${{ matrix.name }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:

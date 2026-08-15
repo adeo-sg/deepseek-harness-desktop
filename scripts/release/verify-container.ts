@@ -160,10 +160,14 @@ function main(): void {
   assert(releaseWorkflow.includes('actions/upload-artifact@v4') && releaseWorkflow.includes('compression-level: 0'), 'release workflow must retain the pre-compressed assets without recompressing them')
   assert(releaseWorkflow.includes('actions/download-artifact@v4'), 'release job must consume the read-only package job output')
   assert((releaseWorkflow.match(/softprops\/action-gh-release@v2/g) ?? []).length === 1, 'one workflow job must create the unified GitHub Release')
+  assert(releaseWorkflow.includes('Prepare retry-safe release state') && releaseWorkflow.includes('--method DELETE'), 'a retry must replace only an incomplete draft release')
+  assert(releaseWorkflow.includes('already-published=true') && releaseWorkflow.includes('draft: true'), 'an existing public release must remain read-only while new uploads stay draft')
   assert(releaseWorkflow.includes('dsh-container-deployment-${{ needs.resolve.outputs.version }}'), 'Actions artifacts must separate the deployment bundle')
   assert(releaseWorkflow.includes('dsh-container-image-${{ needs.resolve.outputs.version }}-linux-${{ matrix.arch }}'), 'Actions artifacts must retain both image architectures')
   assert(releaseWorkflow.includes('scripts/release/assemble-github-release.ts'), 'GitHub publication must pass through exact asset assembly')
   assert(releaseWorkflow.includes('test "$(wc -l < "$actual")" -eq 29'), 'published GitHub asset verification must require the exact asset count')
+  assert(releaseWorkflow.includes('stat --format=%s') && releaseWorkflow.includes('Accept: application/octet-stream'), 'draft verification must compare every asset size and download small metadata assets')
+  assert(releaseWorkflow.includes('cmp "release-assets/${metadata}" "$downloaded"') && releaseWorkflow.includes('-F draft=false'), 'the workflow must publish only after draft metadata matches the assembled files')
 
   const dsh = objectValue(compose.services, 'docker-compose.services').dsh
   const composeService = objectValue(dsh, 'docker-compose.services.dsh')

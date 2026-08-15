@@ -251,6 +251,7 @@ describe('Desktop release workflow', () => {
     expect(workflowDispatch).toMatchObject({ inputs: { version: { required: false, type: 'string' } } })
     expect(workflow.on).not.toHaveProperty('push')
     expect(workflow.jobs).not.toHaveProperty('release')
+    expect(packageJob['timeout-minutes']).toBe(60)
 
     const entries = packageJob.strategy.matrix.include
     expect(entries.map((entry) => {
@@ -336,6 +337,16 @@ describe('Desktop release workflow', () => {
     expect(serialized).toContain('test \\"$(wc -l < \\"$actual\\")\\" -eq 29')
     expect(serialized).toContain('latest-linux-arm64.yml')
     expect(serialized.match(/softprops\/action-gh-release@v2/g)).toHaveLength(1)
+    const prepare = release.steps.filter(isRecord).find(step => step.name === 'Prepare retry-safe release state')
+    const upload = release.steps.filter(isRecord).find(step => step.uses === 'softprops/action-gh-release@v2')
+    const publish = release.steps.filter(isRecord).find(step => step.name === 'Verify exact release assets and publish the draft')
+    expect(prepare?.run).toContain('--method DELETE')
+    expect(upload).toMatchObject({
+      if: "steps.release-state.outputs.already-published != 'true'",
+      with: { draft: true, make_latest: false },
+    })
+    expect(publish?.run).toContain('cmp "release-assets/${metadata}" "$downloaded"')
+    expect(publish?.run).toContain('-F draft=false')
   })
 
   it('keeps package architecture out of the electron-builder targets', () => {
