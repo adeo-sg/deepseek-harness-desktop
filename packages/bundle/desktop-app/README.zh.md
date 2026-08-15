@@ -6,7 +6,7 @@ dsh 桌面面 bundle:`dsh-base` + `dsh-web-app` 之上的 Electron patch 层,外
 
 运行时粘合注册 harness-source prompt 段(与 web 运行时共享)与 `app:desktop-surface` 段,用于给桌面壳层内运行的会话做定位——web bundle 基于 URL 的 surface 文案被禁用,因为壳层没有服务器 URL。
 
-桌面 profile 为 `base + web-app + desktop-app`;`apps/desktop` 壳层经 `dsh-app-boot` 启动它,零网络端口。
+`apps/desktop` 壳层通过 `dsh-app-boot` 加载标准 `web` profile，包括其中的有序组合包、安装在 profile 内的插件和 `profiles/web/cordis.patch.yml`，随后应用 home patch，并把安装自有的 `desktop-app` 组合包作为内存中的传输覆盖层。该覆盖层不会写入 Web profile manifest，因此 `npx @deepseek-ai/dsh web` 与 Electron 共用一份用户组合，同时 Web 启动器不会收到桌面专用行。纯源码组合一致性测试要求每个 Web 行都保持存在且不变，只有 `webserver`、`web-runtime`、`client-hmr` 与 `connection` 允许变化，并把完整的 desktop-only 行集合固定为 `desktop-carrier`、`desktop-connection`、`desktop-app`、`window-controls` 与 `update-banner`。打包启动探针会请求安装后 `clientModules` 图声明的每个客户端 bundle，因此 Electron 包遗漏任何依赖都会使发布冒烟失败。
 
 ## 模型体验
 

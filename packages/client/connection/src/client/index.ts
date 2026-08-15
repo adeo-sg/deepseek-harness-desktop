@@ -43,7 +43,7 @@ export {
 // controller remains package-internal.
 export type { ConnectionConfig, ConnectionSinks, ConnectionState }
 export type { ClientConnectionRpc } from '../rpc.ts'
-export type { DesktopBridge, DesktopBridgeRequest, DesktopBridgeResponse, DesktopBridgeSubscription, DesktopWindowControls } from './desktop-bridge.ts'
+export type { DesktopBridge, DesktopBridgeRequest, DesktopBridgeResponse, DesktopBridgeSubscription, DesktopUpdatePhase, DesktopUpdateProgress, DesktopUpdateState, DesktopUpdates, DesktopWindowControls } from './desktop-bridge.ts'
 export { IpcApiClient } from './ipc-api-client.ts'
 export { createIpcConnectionRpc } from './ipc-rpc.ts'
 

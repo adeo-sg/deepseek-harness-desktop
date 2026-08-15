@@ -1190,6 +1190,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-conversation EnterBehaviorRow id \'composer-enter\'',
       'client-ui-permission-presets PermissionRow id \'permission\'',
       'client-ui-theme AppearanceRow id \'appearance\'',
+      'client-ui-updater UpdateSettingsRow id \'desktop-update\'',
+      'client-ui-window-controls TraySettingsRow id \'desktop-tray\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.general.item\', () => ctx.slots.register(\n      { name: \'settings.general.item\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -1471,6 +1473,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'root\' (client-ui-layout), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-updater UpdateBanner id \'update-banner\'',
       'client-ui-window-controls FloatingWindowControls id \'window-controls-floating\'',
     ],
     replaceRisk: 'none',

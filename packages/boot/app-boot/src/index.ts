@@ -7,15 +7,17 @@
  */
 
 import { pathToFileURL } from 'node:url'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { parseEnv } from 'node:util'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import * as yaml from 'js-yaml'
+import { resolve as resolveImport } from 'import-meta-resolve'
 import { Context, type FiberState } from '@deepseek-ai/cordis'
+import { watch as chokidarWatch } from 'chokidar'
 import Loader, { type Entry, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import Include, { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import Group from '@deepseek-ai/cordis-plugin-group'
-import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { canonicalizeWatchPath, dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/cordis-plugin-hmr'
 // Side-effect type import: resolves `ctx.get('systemPrompt')` to the service.
@@ -33,6 +35,7 @@ export {
   DEFAULT_PROFILE_BUNDLES,
   healProfilesModuleFallback,
   initProfile,
+  loadBundleLayer,
   loadProfile,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
@@ -171,18 +174,20 @@ function readEnvLayer(
  * @param binName - the diagnostic prefix on the diagnostics.
  * @param cwd - the invoking directory whose `.env` is the project layer.
  * @param warn - sink for the one-line misconfiguration diagnostics.
+ * @param home - the already-resolved Harness home whose `.env` is the user layer.
  * @returns this run's frozen environment snapshot.
  * @throws when either file declares a bootstrap-only variable.
  */
 export function loadLayeredEnv(
   binName: string, cwd: string = process.cwd(),
   warn: (line: string) => void = line => void process.stderr.write(line),
+  home: string = resolveDshHome(),
 ): LaunchEnvironmentSnapshot {
-  const home = resolveDshHome()
+  const resolvedHome = resolve(home)
   const inherited = { ...process.env } as Record<string, string>
   // Parse both layers first: a rejection must not leave one file applied.
   const project = readEnvLayer(binName, cwd, warn)
-  const user = home === resolve(cwd) ? undefined : readEnvLayer(binName, home, warn)
+  const user = resolvedHome === resolve(cwd) ? undefined : readEnvLayer(binName, resolvedHome, warn)
   // Apply the checked values without replacing a higher-ranked name.
   for (const layer of [project, user]) {
     if (layer === undefined) continue
@@ -222,23 +227,106 @@ export interface UserPatchWatchOptions {
   compose?: (userPatches: PatchOptions[]) => PatchOptions[]
 }
 
+/** Register one exact config watcher without the module-loader internals required by HMR. */
+async function watchConfigFile(
+  ctx: Context,
+  filename: string,
+  refresh: () => Promise<void>,
+): Promise<() => Promise<void>> {
+  const absolute = resolve(filename)
+  const suffix = [basename(absolute)]
+  let root = dirname(absolute)
+  while (!existsSync(root)) {
+    const parent = dirname(root)
+    /* v8 ignore next -- an absolute filesystem root exists. */
+    if (parent === root) throw new Error(`config watch parent does not exist: ${root}`)
+    suffix.unshift(basename(root))
+    root = parent
+  }
+  const canonicalRoot = await canonicalizeWatchPath(root)
+  const target = resolve(canonicalRoot, ...suffix)
+  const watcher = chokidarWatch(canonicalRoot, {
+    ignoreInitial: true,
+    depth: suffix.length - 1,
+    awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 10 },
+  })
+  const state: { dirty: boolean; running: Promise<void> | undefined; closed: boolean } = {
+    dirty: false,
+    running: undefined,
+    closed: false,
+  }
+  const needsRefresh = (): boolean => state.dirty
+  const schedule = (): void => {
+    if (state.closed) return
+    state.dirty = true
+    if (state.running !== undefined) return
+    const task = (async () => {
+      do {
+        state.dirty = false
+        try {
+          await refresh()
+        } catch (reason) {
+          const error = reason instanceof Error ? reason : new Error(String(reason), { cause: reason })
+          ctx.logger.warn('config reload at %C failed', filename)
+          ctx.logger.warn(error)
+          await ctx.parallel('hmr/config-update-failed', filename, error)
+        }
+      } while (needsRefresh())
+    })().finally(() => { state.running = undefined })
+    state.running = task
+  }
+  const onChange = (path: string): void => {
+    if (resolve(path) === target) schedule()
+  }
+  watcher.on('add', onChange)
+  watcher.on('change', onChange)
+  watcher.on('unlink', onChange)
+  const ready = Promise.withResolvers<void>()
+  let readyState: 'pending' | 'resolved' | 'rejected' = 'pending'
+  watcher.once('ready', () => {
+    readyState = 'resolved'
+    ready.resolve()
+  })
+  watcher.on('error', (error) => {
+    if (readyState === 'pending') {
+      readyState = 'rejected'
+      ready.reject(error)
+    } else {
+      ctx.logger.warn(error)
+    }
+  })
+  try {
+    await ready.promise
+    return ctx.effect(() => async () => {
+      state.closed = true
+      state.dirty = false
+      await watcher.close()
+      await state.running
+    }, 'watchUserPatches()')
+  } catch (error) {
+    state.closed = true
+    await watcher.close()
+    throw error
+  }
+}
+
 /**
  * Watch the user patch layer through Cordis HMR and transactionally reapply it to the boot include.
  * @param ctx - settled app context containing the root Include and an active HMR service.
  * @param options - diagnostic, file, and patch-composition inputs.
  * @returns an asynchronous disposer after the exact-path watcher is ready.
- * @throws when HMR or the root Include is absent, watcher setup fails, or initial path resolution fails.
+ * Uses the active HMR service when available; embedded launchers without
+ * module-loader internals use an exact-path file watcher instead.
+ * @throws when the root Include is absent, watcher setup fails, or initial path resolution fails.
  */
 export async function watchUserPatches(
   ctx: Context,
   options: UserPatchWatchOptions,
 ): Promise<() => Promise<void>> {
   const { binName, filename, compose = (patches: PatchOptions[]) => patches } = options
-  const hmr = ctx.get('hmr')
-  if (hmr === undefined) throw new Error(`${binName}: user patch-layer watching requires the Cordis HMR service`)
   const entry = bootstrapIncludes.get(ctx)
   if (entry === undefined) throw new Error(`${binName}: user patch-layer watching requires the root Include entry`)
-  const register = hmr.registerConfig(filename, async () => {
+  const refresh = async (): Promise<void> => {
     // Re-read the include's non-patch options per refresh: a writer that
     // updates the root Include's other options between refreshes (none exists
     // today) must not have them silently reverted by a user-layer reload.
@@ -251,7 +339,10 @@ export async function watchUserPatches(
         patches,
       },
     })
-  })
+  }
+  const hmr = ctx.get('hmr')
+  if (hmr === undefined) return watchConfigFile(ctx, filename, refresh)
+  const register = hmr.registerConfig(filename, refresh)
   try {
     return await register
   } catch (error) {
@@ -477,8 +568,8 @@ function groupedDump(
  * @param ctx - context carrying an initialized Loader service.
  * @param absoluteConfigPath - absolute YAML or JSON configuration path.
  * @param patches - initial app and user patches, applied in order.
- * @param bareModuleBaseUrl - optional installed-host base for bare package
- * names; relative names continue to resolve beside the configuration file.
+ * @param bareModuleBaseUrl - optional profile or installed-host base for bare
+ * package names; relative names continue to resolve beside the configuration file.
  * @returns the created root Include entry, or `undefined` when a surface
  * disposed the whole tree (taking the Loader service with it) while the
  * transactional create was still settling entry lifecycle.
@@ -494,11 +585,13 @@ export async function mountRootInclude(
     : class HostResolvedRootInclude extends Include {
       override import(name: string, getOuterStack?: () => string[]): unknown {
         const specifier = isAbsolute(name) ? pathToFileURL(name).href : name
-        if (name.startsWith('.') || name.startsWith('cordis:')) return super.import(specifier, getOuterStack)
+        if (isAbsolute(name) || name.startsWith('.') || name.startsWith('cordis:')) {
+          return super.import(specifier, getOuterStack)
+        }
         const internal = this.ctx.loader.internal
-        /* v8 ignore next -- Node supplies the internal loader; this preserves the
-           original diagnostic for hypothetical embedders without it. */
-        if (internal === undefined) return super.import(specifier, getOuterStack)
+        if (internal === undefined) {
+          return super.import(resolveImport(specifier, bareModuleBaseUrl), getOuterStack)
+        }
         return internal.import(specifier, bareModuleBaseUrl, {})
       }
     }
@@ -745,9 +838,11 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
  * @param patches - optional overlay patches applied over the included tree
  * (see {@link loadOptionalPatches}); an empty list mounts none.
  * @param prepare - optional host setup run after Loader installation and before any config-tree entry mounts.
- * @param bareModuleBaseUrl - optional installed-host base for bare package
- * names; use it when the host, rather than the configuration project, owns the
- * complete plugin set.
+ * @param bareModuleBaseUrl - optional profile or installed-host base for bare
+ * package names; use it when the caller owns an explicit plugin resolution root.
+ * @param homePath - optional launcher-owned harness-home resolver. Embedded
+ * surfaces pass this when their data root is not the process default; all
+ * config expressions then use the same root as profile and settings files.
  * @returns the root context once every entry has started, or as soon as a
  * surface disposed the tree while startup was still in flight.
  * @throws a labelled error after disposing the partial context — `host
@@ -760,6 +855,7 @@ export async function boot(
   patches?: PatchOptions[],
   prepare?: (ctx: Context) => Promise<void> | void,
   bareModuleBaseUrl?: string,
+  homePath: typeof dshHomePath = dshHomePath,
 ): Promise<Context> {
   const ctx = new Context()
   // Two failure labels: `prepare` runs before any config-tree entry mounts,
@@ -767,7 +863,7 @@ export async function boot(
   let stage = 'host preparation failed'
   try {
     ctx.baseUrl = pathToFileURL(dirname(absoluteConfigPath)).href + '/'
-    ctx.provide('dshHomePath', dshHomePath)
+    ctx.provide('dshHomePath', homePath)
     await ctx.plugin(Loader)
     await prepare?.(ctx)
     stage = 'plugin tree failed to load'

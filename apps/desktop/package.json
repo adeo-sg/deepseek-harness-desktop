@@ -3,6 +3,7 @@
   "description": "Electron desktop shell for DeepSeek Harness: boots the harness host in-process (the web composition minus HTTP) and serves the built web frontend over app:// with RPC over IPC — zero network ports",
   "version": "0.1.0-rc.10",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "main": "lib/main.js",
   "files": [
@@ -88,7 +89,9 @@
     "@deepseek-ai/dsh-client-ui-theme": "workspace:^",
     "@deepseek-ai/dsh-client-ui-tool": "workspace:^",
     "@deepseek-ai/dsh-client-ui-trajectory": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-updater": "workspace:^",
     "@deepseek-ai/dsh-client-ui-user-questions": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-window-controls": "workspace:^",
     "@deepseek-ai/dsh-client-ui-workflow-run": "workspace:^",
     "@deepseek-ai/dsh-client-ui-workspace": "workspace:^",
     "@deepseek-ai/dsh-client-web-react": "workspace:^",
@@ -221,7 +224,7 @@
     "@deepseek-ai/dsh-workflow-worker-thread": "workspace:^",
     "@deepseek-ai/dsh-workspace": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-window-controls": "workspace:^"
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",

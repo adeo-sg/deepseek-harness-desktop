@@ -1,8 +1,8 @@
 /**
- * Real-composition test for the desktop surface: boot the desktop profile
- * (dsh-base + dsh-web-app + dsh-desktop-app) through the Loader, exactly as
- * the desktop shell's host boot does, and assert the carrier swap holds — the
- * webServer service is the desktop carrier, the desktop bridge serves the /api
+ * Real-composition test for the desktop surface: boot the canonical Web
+ * profile plus the in-memory dsh-desktop-app overlay through the Loader,
+ * exactly as the desktop shell's host boot does, and assert the carrier swap
+ * holds — the webServer service is the desktop carrier, the desktop bridge serves the /api
  * gateway over its fetch handler, the boot manifest rides the index taps, and
  * the desktop-surface prompt replaces the web-surface one.
  *
@@ -20,8 +20,10 @@ import {
   boot,
   healProfilesModuleFallback,
   initProfile,
+  loadBundleLayer,
   loadLayeredEnv,
   loadProfile,
+  PROFILE_TEMPLATES,
   resolveProfileDir,
 } from '@deepseek-ai/dsh-app-boot'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
@@ -30,15 +32,9 @@ import { InProcessApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
 import type { DesktopBridgeHost } from '@deepseek-ai/dsh-client-connection/desktop'
 import type { DesktopWebServer } from '@deepseek-ai/dsh-host-desktop-carrier'
 
-/** The desktop profile's bundle layers, in application order. */
-const BUNDLES = [
-  '@deepseek-ai/dsh-base',
-  '@deepseek-ai/dsh-web-app',
-  '@deepseek-ai/dsh-desktop-app',
-] as const
-
 const NAME = 'dsh-desktop'
-const PROFILE = 'desktop'
+const PROFILE = 'web'
+const DESKTOP_OVERLAY_BUNDLE = '@deepseek-ai/dsh-desktop-app'
 
 /** The desktop shell's package.json — the installation anchor of the module fallback closure. */
 const INSTALL_ANCHOR = fileURLToPath(new URL('../../../../apps/desktop/package.json', import.meta.url))
@@ -59,7 +55,7 @@ const WORKSPACE_BUILT = existsSync(
 const maybeDescribe = WORKSPACE_BUILT ? describe : describe.skip
 
 /**
- * Stage a temp Harness home with the desktop profile initialized and the
+ * Stage a temp Harness home with the canonical Web profile initialized and the
  * module fallback healed from the desktop app's dependency closure — exactly
  * the desktop shell's own host boot. The web runtime serves the real built
  * frontend dist (this suite requires a built workspace).
@@ -67,7 +63,7 @@ const maybeDescribe = WORKSPACE_BUILT ? describe : describe.skip
 function stageHome(): { configPath: string; profileDir: string } {
   workdir = mkdtempSync(join(tmpdir(), 'dsh-desktop-'))
   const profileDir = resolveProfileDir(PROFILE, workdir)
-  initProfile(profileDir, [...BUNDLES])
+  initProfile(profileDir, PROFILE_TEMPLATES.web ?? [])
   healProfilesModuleFallback(INSTALL_ANCHOR, workdir)
   return { configPath: join(profileDir, 'cordis.yml'), profileDir }
 }
@@ -75,7 +71,12 @@ function stageHome(): { configPath: string; profileDir: string } {
 async function bootDesktop(): Promise<{ ctx: Awaited<ReturnType<typeof boot>>; bridge: DesktopBridgeHost }> {
   const { configPath, profileDir } = stageHome()
   const profile = loadProfile(NAME, PROFILE, INSTALL_ANCHOR, workdir ?? '')
-  const patches = [...profile.layers.flatMap(layer => layer.patches), ...profile.patches]
+  const desktopLayer = loadBundleLayer(NAME, DESKTOP_OVERLAY_BUNDLE, INSTALL_ANCHOR, profileDir)
+  const patches = [
+    ...profile.layers.flatMap(layer => layer.patches),
+    ...profile.patches,
+    ...desktopLayer.patches,
+  ]
   writeFileSync(configPath, '[]\n')
   const ctx = await boot(NAME, configPath, patches, (hostCtx) => {
     hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, loadLayeredEnv(NAME, profileDir))
@@ -88,7 +89,7 @@ async function bootDesktop(): Promise<{ ctx: Awaited<ReturnType<typeof boot>>; b
   return { ctx, bridge }
 }
 
-maybeDescribe('desktop profile composition', () => {
+maybeDescribe('desktop composition over the Web profile', () => {
   it('swaps the HTTP webserver for the desktop carrier and serves the boot manifest', async () => {
     const { ctx } = await bootDesktop()
     try {

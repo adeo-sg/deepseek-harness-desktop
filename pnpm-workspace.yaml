@@ -75,4 +75,5 @@ minimumReleaseAgeExclude:
   - node-addon-require-builtin@0.1.4
 
 patchedDependencies:
+  electron-updater@6.8.9: patches/electron-updater@6.8.9.patch
   node-pty@1.1.0: patches/node-pty@1.1.0.patch

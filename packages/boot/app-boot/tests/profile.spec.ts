@@ -12,6 +12,7 @@ import {
   composeEntries,
   healProfilesModuleFallback,
   initProfile,
+  loadBundleLayer,
   loadProfile,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
@@ -194,6 +195,24 @@ describe('loadProfile', () => {
     const dir = resolveProfileDir('demo', home)
     initProfile(dir, ['not-a-bundle'])
     expect(() => loadProfile('t', 'demo', anchor, home)).toThrow('declares no dsh.bundle')
+  })
+})
+
+describe('loadBundleLayer', () => {
+  it('loads an installation-owned overlay without changing the profile manifest', () => {
+    const anchor = stageInstallation({
+      'base-bundle': { patch: '[]\n' },
+      'runtime-overlay': { patch: '- insert:\n    - id: overlay\n      name: overlay-plugin\n' },
+    })
+    const home = tmp()
+    const dir = resolveProfileDir('demo', home)
+    initProfile(dir, ['base-bundle'])
+
+    const layer = loadBundleLayer('t', 'runtime-overlay', anchor, dir)
+
+    expect(layer.packageName).toBe('runtime-overlay')
+    expect(layer.patches).toHaveLength(1)
+    expect(readProfileManifest('t', dir).dsh?.profile?.bundles).toEqual(['base-bundle'])
   })
 })
 

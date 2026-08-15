@@ -50,6 +50,8 @@ function fakeBridge(): {
       }
       return subscription
     },
+    onOpenSession: vi.fn(),
+    onNewSession: vi.fn(),
     version: 'test',
   }
   return {

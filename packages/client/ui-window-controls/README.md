@@ -8,11 +8,13 @@ Platform metrics are explicit: Windows uses 45x32px full-bleed hit targets with 
 
 The cluster is pure presentation over the preload's `windowControls` surface (`window.desktopBridge.windowControls`, an optional member of the authoritative `DesktopBridge` in `dsh-client-connection`). One-shot actions ride fire-and-forget sends; the initial toggle glyph is seeded from an `isMaximized()` query and kept current by the `onMaximizedChanged` subscription, so a keyboard snap or a double-click on the drag region flips the glyph without a stale render. Absent the surface — the web composition, fixture mode, or an accidental roster — the components render nothing.
 
-The shell itself is frameless (`frame: false`) with no application menu. The Session header title row is the window drag region (`-webkit-app-region: drag`, inert on the web), and the cluster opts back into pointer events; the overlay strip carries its own drag region. Double-clicking either drag region maximizes and restores natively. The package ships only in the `dsh-desktop-app` bundle patch, so the web composition never loads it. The [frameless window chrome Agent Note](../../../.agents/notes/implemented/architecture/2026-08-14-desktop-frameless-window-chrome.md) owns the main-process side of the contract (channels, preload, drag regions).
+The plugin is the desktop shell's chrome surface beyond the cluster: it routes the system tray's session commands into the renderer (the tray menu lists the whole host corpus, so `onOpenSession` repulls the session baseline via `sessions.refresh()` before `sessions.open()` when the id is not in the list mirror, and `onNewSession` rides `workspaces.startSession()`), and it owns the close-to-tray preference row in General settings (`settings.general.item`, id `desktop-tray`), bound to the `desktop` settings namespace through `ctx.settingsScope`. The host-side namespace registration and the tray itself live in the app's main process ([desktop tray Agent Note](../../../.agents/notes/implemented/feature/2026-08-15-desktop-tray-background-mode.md)); `refresh()` joined the `ISessions` face ([runtime contract](../runtime/src/client/contract/sessions.ts)) for this path.
+
+The shell itself is frameless (`frame: false`) with no application menu. The Session header title row is the window drag region (`-webkit-app-region: drag`, inert on the web), and the cluster opts back into pointer events; the overlay strip carries its own drag region. Double-clicking either drag region maximizes and restores natively. The package ships only in the `dsh-desktop-app` bundle patch, so the web composition never loads it. The [frameless window chrome Agent Note](../../../.agents/notes/implemented/architecture/2026-08-14-desktop-frameless-window-chrome.md) owns the main-process side of the window-chrome contract (channels, preload, drag regions).
 
 ## Model Experience
 
-None, as the cluster is human-only window chrome that issues no RPC, adds no session event, and reaches no prompt, message, schema, stream, or tool result.
+None, as the package is human-only desktop chrome and navigation. Tray actions may select or create a session, but they do not submit a message, add a session event, or change a model request.
 
 #### KV Cache effect
 
@@ -20,6 +22,6 @@ None; the package never assembles or sends provider requests.
 
 ## Known Limitations and Deferred Work
 
-- **Windows-first framing** — the frameless window uses `frame: false` and Electron's built-in edge resizing, which works on Windows and Linux; macOS frameless windows need their own edge-resize handling, deferred with the macOS build.
+- **Windows-first framing** — the right-side custom cluster follows Windows placement. It does not reproduce native macOS traffic lights, and platform-specific zoom semantics remain outside the package.
 - **No Windows 11 snap-layout flyout** — the native maximize button (which hosts the flyout) is gone with the title bar; snapping still works via drag-to-top, Win+arrow keys, and the custom maximize button.
 - **Drag region follows the header** — only the Session header row and the overlay strip are draggable; the sidebar, details column, and hero body are not (the header row's buttons and the cluster stay clickable via `no-drag`).

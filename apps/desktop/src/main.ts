@@ -11,9 +11,12 @@ import { app, BrowserWindow, Menu } from 'electron'
 import type { DesktopWebServer } from '@deepseek-ai/dsh-host-desktop-carrier'
 import { bootDesktopHost } from './host.ts'
 import { IPC_CHANNELS } from './bridge-types.ts'
-import { registerIpc, registerWindowIpc } from './ipc.ts'
+import { registerIpc, registerUpdateIpc, registerWindowIpc } from './ipc.ts'
 import { APP_INDEX_URL, registerAppScheme, registerDesktopProtocol } from './protocol.ts'
+import { installTray, type DesktopTray } from './tray.ts'
 import type { DesktopBridgeHost } from './bridge-types.ts'
+import { registerDesktopSettings } from './desktop-settings.ts'
+import { DESKTOP_RELEASE_PAGE_URL, installUpdater } from './update.ts'
 
 /** The CJS preload artifact (sandboxed preloads cannot be ESM), beside lib/main.js. */
 const PRELOAD_PATH = fileURLToPath(new URL('./preload.cjs', import.meta.url))
@@ -22,7 +25,21 @@ const PRELOAD_PATH = fileURLToPath(new URL('./preload.cjs', import.meta.url))
 const WINDOW_ICON = join(app.getAppPath(), 'build', 'icon.png')
 
 let window: BrowserWindow | undefined
+let tray: DesktopTray | undefined
 let disposing = false
+let quitting = false
+
+/**
+ * Show and focus the shell window, restoring it from a hidden (tray) or
+ * minimized state — the shared "open the app" action behind the tray menu,
+ * dock activation, and second-instance launches.
+ */
+function showShellWindow(): void {
+  if (window === undefined || window.isDestroyed()) return
+  if (window.isMinimized()) window.restore()
+  if (!window.isVisible()) window.show()
+  window.focus()
+}
 
 /**
  * Boot the host and open the shell window.
@@ -38,6 +55,10 @@ async function start(): Promise<void> {
   if (carrier === undefined) throw new Error('dsh-desktop: webServer service missing after boot')
   const bridge = ctx.get('desktopBridge') as DesktopBridgeHost | undefined
   if (bridge === undefined) throw new Error('dsh-desktop: desktopBridge service missing after boot')
+
+  // The desktop settings namespace: registered exactly once, consumed by the
+  // tray (close-to-tray) and the updater (auto-check/channel/auto-download).
+  const settingsScope = registerDesktopSettings(ctx)
 
   registerDesktopProtocol(carrier)
   registerIpc(bridge)
@@ -69,6 +90,14 @@ async function start(): Promise<void> {
       sandbox: true,
     },
   })
+  // Close-to-tray background mode: while the preference is on (the default),
+  // closing the window hides it to the tray and the host keeps running; the
+  // tray's Quit item and Cmd/Ctrl+Q are the real exits.
+  window.on('close', (event) => {
+    if (quitting || tray?.closeToTray() !== true) return
+    event.preventDefault()
+    window?.hide()
+  })
   window.on('closed', () => { window = undefined })
   // Push maximize/restore flips to the custom controls so the toggle glyph
   // tracks the real window state (keyboard snap, double-click drag region).
@@ -89,7 +118,44 @@ async function start(): Promise<void> {
       window.webContents.reload()
     }
   })
+
+  // Auto-update discovery: the GitHub Releases provider configured at build
+  // time (electron-builder.yml's publish section). Quiet checks on boot and on
+  // an interval, transitions pushed to the renderer's update banner; dev runs
+  // are disabled (nothing is packaged to replace). Installation needs a signed
+  // build, so until the signing milestone the banner's fallback opens the
+  // release page for a manual download.
+  const updater = installUpdater({
+    ...(settingsScope === undefined ? {} : { settingsScope }),
+    getWindow: () => window,
+    currentVersion: app.getVersion(),
+    isPackaged: app.isPackaged,
+    // macOS requires a signed application for electron-updater installer
+    // handoff. Unsigned release candidates keep discovery and the Release-page
+    // path without exposing a download action that the OS will reject.
+    canInstall: process.platform !== 'darwin',
+    releasePageUrl: DESKTOP_RELEASE_PAGE_URL,
+  })
+  registerUpdateIpc(updater)
+
+  // The preload calls update state during renderer startup. Register its IPC
+  // handlers before loading the page so the first request cannot race setup.
   await window.loadURL(APP_INDEX_URL)
+
+  // The system tray: the background-mode surface and the session quick-jump
+  // menu. Installed after the window loads so renderer commands always have a
+  // live page to land on.
+  tray = installTray({
+    ctx,
+    getWindow: () => window,
+    quit: () => {
+      quitting = true
+      app.quit()
+    },
+    iconPath: WINDOW_ICON,
+    ...(settingsScope === undefined ? {} : { settingsScope }),
+    checkUpdates: () => { void updater.checkNow() },
+  })
 }
 
 // Diagnose background-process faults (GPU compositor, utility, zygote): a GPU
@@ -108,10 +174,14 @@ if (!gotLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    if (window !== undefined) {
-      if (window.isMinimized()) window.restore()
-      window.focus()
-    }
+    // A second launch opens the existing shell — the tray app's foreground
+    // gesture, whether the window is hidden in the tray or merely unfocused.
+    showShellWindow()
+  })
+  // macOS dock activation with no visible window restores the shell (the
+  // window is hidden in the tray, never destroyed, while close-to-tray is on).
+  app.on('activate', () => {
+    showShellWindow()
   })
   void app.whenReady().then(() => {
     void start().catch((error: unknown) => {
@@ -122,5 +192,11 @@ if (!gotLock) {
 }
 
 app.on('window-all-closed', () => {
+  // Background mode: with close-to-tray on, window close hides (never closes),
+  // so this fires only when the window was really destroyed while the tray
+  // keeps the host alive — stay running and reopen from the tray. macOS apps
+  // also conventionally stay alive without windows. Otherwise (close-to-tray
+  // off) closing the window quits, as before the tray existed.
+  if (tray?.closeToTray() === true || process.platform === 'darwin') return
   app.quit()
 })

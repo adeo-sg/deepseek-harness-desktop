@@ -4,15 +4,15 @@
 // resources/app with a scratch DSH_PROBE_HOME:
 //   npx electron scripts/packaged-boot-probe.cjs <app-dir> [--no-sandbox]
 //
-// The probe covers the clean-machine first-run contract end to end: the host
-// tree boots with the carrier + bridge services, the packaged frontend dist
-// serves the shell (with the injected boot manifest), client-modules serves a
-// plugin bundle from the installed packages, and a session-create round trip
-// through the gateway assembles a real agent from the SHIPPED preset roster —
-// the first-run path that previously failed with UnknownPresetError when no
-// system-trusted preset root shipped.
+// The probe covers clean-machine first boot and restart with a plugin installed
+// in the shared Web profile. The host tree boots with the carrier + bridge
+// services, the packaged frontend dist serves the shell (with the injected
+// boot manifest), client-modules serves every advertised plugin bundle, and a
+// session-create round trip assembles a real agent from the shipped preset
+// roster. The second boot proves that a profile-local bundle and user patch
+// reach Electron without persisting the desktop transport in that manifest.
 const { app } = require('electron')
-const { mkdirSync, rmSync, writeFileSync } = require('node:fs')
+const { mkdirSync, readFileSync, rmSync, writeFileSync } = require('node:fs')
 const { join, resolve } = require('node:path')
 
 // The app dir may arrive relative to the caller's cwd (the workflow runs the
@@ -44,11 +44,21 @@ app.whenReady().then(async () => {
     const servesShell = index.status === 200 && indexText.includes('window.__DSH_BOOT__')
     lines.push('shell: ' + String(servesShell) + ' (status ' + index.status + ')')
 
-    // One client bundle must resolve from the installed packages through
-    // client-modules' /plugins route (the renderer fetches these at boot).
-    const bundle = await carrier.dispatch(new Request('http://dsh.internal/plugins/@deepseek-ai/dsh-client-ui-layout/client.js'))
-    const servesBundle = bundle.status === 200
-    lines.push('bundle: ' + String(servesBundle) + ' (status ' + bundle.status + ')')
+    // Every client bundle advertised by the installed graph must resolve
+    // through client-modules' /plugins route. One representative bundle can
+    // pass while another package was omitted from electron-builder's closure.
+    const graph = ctx.get('clientModules').graph()
+    const cleanClientIds = graph.entries.map(entry => entry.id).sort()
+    const bundleResults = await Promise.all(graph.entries.map(async (entry) => {
+      const response = await carrier.dispatch(new Request(new URL(entry.url, 'http://dsh.internal')))
+      return { id: entry.id, status: response.status }
+    }))
+    const failedBundles = bundleResults.filter(result => result.status !== 200)
+    const servesBundles = bundleResults.length > 0 && failedBundles.length === 0
+    lines.push('bundles: ' + String(servesBundles) + ' ('
+      + String(bundleResults.length - failedBundles.length) + '/' + String(bundleResults.length) + ')'
+      + (failedBundles.length === 0 ? '' : ' ' + JSON.stringify(failedBundles)))
+    lines.push('client-ids: ' + JSON.stringify(cleanClientIds))
 
     // A session-create round trip through the gateway assembles a real agent
     // from the shipped preset roster (the composition defaults to 'standard');
@@ -59,16 +69,80 @@ app.whenReady().then(async () => {
     lines.push('session.create: ' + String(createsSession) + (created.result?.ok === true
       ? ' (' + created.result.value.sessionId + ')'
       : ' ' + JSON.stringify(created.result?.error)))
-    ok = hasCarrier && hasBridge && servesShell && servesBundle && createsSession
     await shutdown.shutdown(0)
+
+    // Existing-machine path: a plugin installed into the canonical Web
+    // profile, plus that profile's own patch, must reach Electron unchanged.
+    // The desktop transport remains a runtime overlay and must not be written
+    // into the shared manifest.
+    const profileDir = join(home, 'profiles', 'web')
+    const packageName = 'packaged-profile-addon'
+    const packageDir = join(profileDir, 'node_modules', packageName)
+    mkdirSync(packageDir, { recursive: true })
+    writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
+      name: packageName,
+      version: '0.0.0',
+      type: 'module',
+      exports: {
+        import: './index.js',
+        require: './index.cjs',
+      },
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    }))
+    writeFileSync(join(packageDir, 'index.js'), [
+      "export const name = 'packaged-profile-addon'",
+      'export function apply(ctx, config) {',
+      "  ctx.provide('packagedProfileAddon', config.value)",
+      '}',
+      '',
+    ].join('\n'))
+    writeFileSync(join(packageDir, 'index.cjs'), [
+      'exports.apply = function apply(ctx) {',
+      "  ctx.provide('packagedRequireAddon', true)",
+      '}',
+      '',
+    ].join('\n'))
+    writeFileSync(join(packageDir, 'cordis.patch.yml'), [
+      '- insert:',
+      '    - id: packaged-profile-addon',
+      `      name: '${packageName}'`,
+      '      config:',
+      '        value: bundle-default',
+      '',
+    ].join('\n'))
+    const manifestPath = join(profileDir, 'package.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    manifest.dependencies[packageName] = '0.0.0'
+    manifest.dsh.profile.bundles.push(packageName)
+    writeFileSync(manifestPath, JSON.stringify(manifest, undefined, 2) + '\n')
+    writeFileSync(join(profileDir, 'cordis.patch.yml'), [
+      '- id: packaged-profile-addon',
+      '  config:',
+      '    value: web-profile-patch',
+      '',
+    ].join('\n'))
+
+    const customized = await bootDesktopHost({ home, installAnchor: appDir + '/package.json' })
+    const loadsProfilePlugin = customized.ctx.get('packagedProfileAddon') === 'web-profile-patch'
+      && customized.ctx.get('packagedRequireAddon') === undefined
+    const customizedClientIds = customized.ctx.get('clientModules').graph().entries.map(entry => entry.id).sort()
+    const preservesClientGraph = JSON.stringify(customizedClientIds) === JSON.stringify(cleanClientIds)
+    const persistedManifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    const sharedProfile = !persistedManifest.dsh.profile.bundles.includes('@deepseek-ai/dsh-desktop-app')
+    lines.push('profile-plugin: ' + String(loadsProfilePlugin)
+      + ', shared-web-profile: ' + String(sharedProfile))
+    lines.push('client-graph-stable: ' + String(preservesClientGraph))
+    await customized.shutdown.shutdown(0)
+    ok = hasCarrier && hasBridge && servesShell && servesBundles && createsSession
+      && loadsProfilePlugin && sharedProfile && preservesClientGraph
   } catch (cause) {
     lines.push('BOOT FAILED:')
     let node = cause
     while (node) {
+      lines.push('- ' + (node instanceof Error ? node.stack ?? node.message : String(node)))
       if (Array.isArray(node.errors)) for (const e of node.errors) lines.push('- ' + (e instanceof Error ? e.message : String(e)))
       node = node.cause
     }
-    if (lines.length === 1) lines.push(String(cause))
   }
   // Echo the verdict so CI logs carry it even when the result write fails;
   // the exit code is the smoke verdict either way.

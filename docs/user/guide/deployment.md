@@ -30,13 +30,18 @@ Set `DEEPSEEK_API_KEY` in the shell and optionally set `DSH_TRUSTED_HOSTS` befor
 DEEPSEEK_API_KEY=your-key DSH_TRUSTED_HOSTS=localhost,127.0.0.1 docker compose up -d --no-build --wait --wait-timeout 180
 ```
 
-That command starts the image built from the source clone and waits for the hardened container to become healthy. A GitHub Release provides a saved `linux/amd64` image, its deployment bundle, and one SHA-256 file for each archive. Download all four assets into one directory, verify and load the image, then extract and start the deployment bundle. The packaged Compose file has no source-only build section and uses the image tag restored by `docker load`; `DSH_IMAGE` may override that tag.
+That command starts the image built from the source clone and waits for the hardened container to become healthy. A GitHub Release provides native `linux/amd64` and `linux/arm64` image archives, one deployment bundle, and one SHA-256 file for each archive. Download the deployment bundle, its checksum, and the two files for the host architecture into one directory. The packaged Compose file has no source-only build section and uses the image tag restored by `docker load`; `DSH_IMAGE` may override that tag.
 
 ```sh
-version=0.1.0-rc.10
-sha256sum -c "dsh-container-image-${version}-linux-amd64.tar.gz.sha256"
+version='X.Y.Z'
+case "$(uname -m)" in
+  x86_64|amd64) arch=amd64 ;;
+  aarch64|arm64) arch=arm64 ;;
+  *) echo 'unsupported container architecture' >&2; exit 1 ;;
+esac
+sha256sum -c "dsh-container-image-${version}-linux-${arch}.tar.gz.sha256"
 sha256sum -c "dsh-container-${version}.tar.gz.sha256"
-gzip -dc "dsh-container-image-${version}-linux-amd64.tar.gz" | docker load
+gzip -dc "dsh-container-image-${version}-linux-${arch}.tar.gz" | docker load
 tar -xzf "dsh-container-${version}.tar.gz"
 cd "dsh-container-${version}"
 DEEPSEEK_API_KEY=your-key docker compose up -d --wait --wait-timeout 180
@@ -51,17 +56,23 @@ The manifests create one replica, two `ReadWriteOnce` claims, a ClusterIP Servic
 ```sh
 docker build -t localhost/deepseek-harness:local .
 docker save --output dsh-container-local.tar localhost/deepseek-harness:local
+minikube start --driver=docker --container-runtime=containerd
 minikube image load dsh-container-local.tar
 ```
 
-For an offline Release deployment, download all four assets into one directory and run the following sequence without starting Compose. It verifies both checksums, converts the image asset to the archive format accepted by Minikube, loads the image, and enters the extracted deployment bundle. For kind, replace the `minikube` command with `kind load image-archive "dsh-container-image-${version}-linux-amd64.tar"`.
+For an offline Release deployment, download the four files for the host architecture and run the following sequence without starting Compose. It verifies both checksums, converts the selected image asset to the archive format accepted by Minikube, loads the image, and enters the extracted deployment bundle. For kind, replace the `minikube` command with `kind load image-archive "dsh-container-image-${version}-linux-${arch}.tar"`.
 
 ```sh
-version=0.1.0-rc.10
-sha256sum -c "dsh-container-image-${version}-linux-amd64.tar.gz.sha256"
+version='X.Y.Z'
+case "$(uname -m)" in
+  x86_64|amd64) arch=amd64 ;;
+  aarch64|arm64) arch=arm64 ;;
+  *) echo 'unsupported container architecture' >&2; exit 1 ;;
+esac
+sha256sum -c "dsh-container-image-${version}-linux-${arch}.tar.gz.sha256"
 sha256sum -c "dsh-container-${version}.tar.gz.sha256"
-gzip -dc "dsh-container-image-${version}-linux-amd64.tar.gz" > "dsh-container-image-${version}-linux-amd64.tar"
-minikube image load "dsh-container-image-${version}-linux-amd64.tar"
+gzip -dc "dsh-container-image-${version}-linux-${arch}.tar.gz" > "dsh-container-image-${version}-linux-${arch}.tar"
+minikube image load "dsh-container-image-${version}-linux-${arch}.tar"
 tar -xzf "dsh-container-${version}.tar.gz"
 cd "dsh-container-${version}"
 ```
@@ -105,7 +116,7 @@ The probes use `GET /` because the Web server has no unauthenticated health endp
 
 ## Release assets
 
-A `dsh-v<version>` tag builds one `linux/amd64` image directly as `dsh-container-image-<version>-linux-amd64.tar.gz` and loads that archive for validation. The workflow verifies and extracts `dsh-container-<version>.tar.gz`, validates its internal file manifest, then starts the extracted Compose file with its read-only root, `noexec` temporary mount, and named volumes; it requires an HTTP response and verifies both named volumes across container recreation. The matching GitHub Release keeps that image, the deployment bundle, and both SHA-256 files. The workflow does not use an image-publishing action, log in to an image registry, or push a registry tag. A manual run performs the same build and retains the four files as a 30-day Actions artifact instead of creating a Release. The npm release workflow remains separate; `pnpm run release:pack` does not contain the Docker image. Build from source on another architecture, or publish an architecture-specific image to a registry you control. Pin that registry tag or digest in production and update the Kustomize image override with the application version.
+A `dsh-v<version>` tag builds native `linux/amd64` and `linux/arm64` images and loads each saved archive for validation. The workflow verifies and extracts `dsh-container-<version>.tar.gz`, validates its internal file manifest, then starts the extracted Compose file on amd64 with its read-only root, `noexec` temporary mount, and named volumes; it requires an HTTP response and verifies both named volumes across container recreation. The unified GitHub Release keeps both images, their SHA-256 files, the deployment bundle, its checksum, every supported Desktop installer, update metadata, and aggregate checksums. The workflow does not log in to an image registry or push a registry tag. A manual run performs the same builds and retains the files as 30-day Actions artifacts instead of creating a Release. The npm release workflow remains separate; `pnpm run release:pack` does not contain the Docker image. Pin an operator-owned registry tag or digest in production and update the Kustomize image override with the application version.
 
 ## Troubleshooting
 

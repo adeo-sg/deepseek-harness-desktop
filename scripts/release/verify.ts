@@ -53,18 +53,23 @@ function main(): void {
   if (values.family === undefined) throw new Error('usage: verify.ts --family <dsh|vendor>')
 
   const family = releaseFamily(values.family)
-  const members = family.members(process.cwd())
-  family.verifyVersions(members)
+  const root = process.cwd()
+  const versionMembers = family.versionMembers(root)
+  const publishMembers = family.publishMembers(root)
+  family.verifyVersions(versionMembers)
 
   const publishing = process.env.RELEASE_PUBLISH === 'true'
   if (publishing) {
-    verifyPublishable(members)
-    verifyTag(family, members, process.env.GITHUB_REF ?? '')
+    verifyPublishable(publishMembers)
+    verifyTag(family, versionMembers, process.env.GITHUB_REF ?? '')
   }
 
-  const versions = [...new Set(members.map(member => member.version))]
+  const versions = [...new Set(versionMembers.map(member => member.version))]
   const summary = versions.length === 1 ? versions[0] : `${String(versions.length)} versions`
-  console.log(`release verify: family ${family.id}, ${String(members.length)} member(s), ${summary}${publishing ? ', publish gates passed' : ''}`)
+  console.log(
+    `release verify: family ${family.id}, ${String(versionMembers.length)} version member(s),`
+    + ` ${String(publishMembers.length)} publish member(s), ${summary}${publishing ? ', publish gates passed' : ''}`,
+  )
 }
 
 if (isEntry(import.meta.url)) main()

@@ -440,6 +440,11 @@ export class TestSessions implements ISessions {
     return Promise.resolve()
   }
 
+  /** The fixture list is authoritative — a repull records the call and resolves. */
+  refresh(): Promise<void> {
+    return Promise.resolve()
+  }
+
   /** Apply a confirmed preset switch into the fixture list, as production does. */
   noteAgentPreset(sessionId: SessionId, agentPreset: string): void {
     this.list.update((draft) => {

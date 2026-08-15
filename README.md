@@ -22,13 +22,21 @@ npx @deepseek-ai/dsh web
 
 The command starts the Web UI, served at `http://127.0.0.1:3080` by default. See [Web UI guide](docs/user/guide/index.md).
 
+### Install the desktop application
+
+Download the Windows, macOS, or Linux package for your CPU architecture from [GitHub Releases](https://github.com/sdkwork-ai/deepseek-harness-desktop/releases). The [desktop installation guide](docs/user/guide/desktop.md) lists every installer and portable format and explains checksum verification.
+
+### Deploy with Docker or Kubernetes
+
+Container deployments use port `4080`, while the npx/local runner keeps `3080`. Build from a source clone or install the offline image and deployment bundle from GitHub Releases by following the [deployment guide](docs/user/guide/deployment.md).
+
 ### Run from source
 
 To run from a repository checkout:
 
 ```sh
-git clone https://github.com/deepseek-ai/deepseek-harness.git
-cd deepseek-harness
+git clone https://github.com/sdkwork-ai/deepseek-harness-desktop.git
+cd deepseek-harness-desktop
 pnpm install
 pnpm run build
 pnpm dsh web

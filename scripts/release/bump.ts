@@ -315,7 +315,7 @@ function main(): void {
 
   const family = releaseFamily(values.family)
   const root = process.cwd()
-  const members = family.members(root)
+  const members = family.versionMembers(root)
   family.verifyVersions(members)
 
   let planned: PlannedVersion[]

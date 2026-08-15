@@ -1,0 +1,124 @@
+/* Update banner card: bottom-right over the frame's floating layer. The
+   shell.overlay layer is click-through; the card opts back into pointer
+   events. Tokens follow the settings rows (alias border/label, business
+   primary actions). */
+
+.banner {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 40;
+  box-sizing: border-box;
+  width: 320px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  color: var(--dsw-alias-label-primary);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.title {
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.dismiss {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.dismiss:hover {
+  background: var(--dsw-alias-border-l2);
+}
+
+.progress {
+  position: relative;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--dsw-alias-border-l2);
+  overflow: hidden;
+}
+
+.progressFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 9px;
+  background: var(--dsw-alias-state-business-primary);
+  transition: width 200ms var(--ds-ease-in-out);
+}
+
+.progressLabel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.notes {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.notes summary {
+  cursor: pointer;
+  color: var(--dsw-alias-label-primary);
+}
+
+.error {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-danger, #e5484d);
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.primary {
+  border: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-inverse, #ffffff);
+  background: var(--dsw-alias-state-business-primary);
+  cursor: pointer;
+}
+
+.ghost {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+  background: transparent;
+  cursor: pointer;
+}

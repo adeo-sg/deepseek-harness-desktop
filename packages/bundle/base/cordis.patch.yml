@@ -77,6 +77,8 @@
     # below without a restart, and is what the web Models page writes.
     - id: settings
       name: '@deepseek-ai/dsh-settings-file'
+      config:
+        dshHome: !!js dshHomePath()
 
     # Credential sources: inherited environment over the managed
     # `$DSH_HOME/.credentials.yaml`, with project and user `.env` fallbacks.
@@ -84,6 +86,8 @@
     # managed document, which is never materialized into the process environment.
     - id: credentials
       name: '@deepseek-ai/dsh-credentials-local'
+      config:
+        dshHome: !!js dshHomePath()
 
     # The pi-ai multi-provider twin, mounted dormant: zero routes (and no extra
     # models in the picker) until a `llm-pi-ai:` settings section supplies provider
@@ -206,6 +210,8 @@
 
     - id: shell-env
       name: '@deepseek-ai/dsh-shell-env'
+      config:
+        dshHome: !!js dshHomePath()
 
     - id: tool-bash
       name: '@deepseek-ai/dsh-tool-bash'

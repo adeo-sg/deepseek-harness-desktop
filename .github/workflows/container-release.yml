@@ -1,6 +1,7 @@
-# Build the Web container as an offline archive, prove that archive starts,
-# and attach it with the deployment assets to the matching GitHub Release.
-name: Release (container)
+# One dsh-v* tag packages every Desktop target, two native container images,
+# and the Compose/Kubernetes bundle, then publishes their exact asset set in one
+# GitHub Release. Container images remain offline Docker archives.
+name: Release (dsh artifacts)
 
 on:
   push:
@@ -8,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Release version to package (use the package.json version)
+        description: Release version to rehearse (use the package.json version)
         required: true
         type: string
 
@@ -23,29 +24,30 @@ env:
   NODE_VERSION: '24'
 
 jobs:
-  package:
-    name: Package offline Web image (no registry push)
+  resolve:
+    name: Resolve release version
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 5
     outputs:
       stable: ${{ steps.version.outputs.stable }}
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 1
           persist-credentials: false
 
-      - name: Resolve release version
+      - name: Validate tag and package version
         id: version
         shell: bash
         env:
           DISPATCH_VERSION: ${{ inputs.version }}
         run: |
-          if [[ -n "$DISPATCH_VERSION" ]]; then
-            version="$DISPATCH_VERSION"
-          else
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
             version="${GITHUB_REF_NAME#dsh-v}"
+            test "$GITHUB_REF_NAME" = "dsh-v$version"
+          else
+            version="$DISPATCH_VERSION"
           fi
           manifest_version="$(node -p "require('./package.json').version")"
           test "$version" = "$manifest_version" || {
@@ -56,6 +58,25 @@ jobs:
           [[ "$version" == *-* ]] && stable=false
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "stable=$stable" >> "$GITHUB_OUTPUT"
+
+  desktop:
+    name: Package Desktop matrix
+    needs: resolve
+    uses: ./.github/workflows/desktop-release.yml
+    with:
+      version: ${{ needs.resolve.outputs.version }}
+    permissions:
+      contents: read
+
+  container-bundle:
+    name: Package Compose and Kubernetes bundle
+    needs: resolve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@v4
         with:
@@ -69,43 +90,16 @@ jobs:
       - name: Install release tooling
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Verify deployment assets
+      - name: Verify deployment and release definitions
         run: pnpm run verify:container
 
       - name: Package deployment assets
         run: pnpm run release:pack-container --out dist/container --image-repository localhost/deepseek-harness
 
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Build offline image archive (no registry push)
+      - name: Verify packaged deployment archive
         shell: bash
         env:
-          RELEASE_VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          image_tar="dsh-container-image-${RELEASE_VERSION}-linux-amd64.tar"
-          image_archive="${image_tar}.gz"
-          docker buildx build \
-            --file Dockerfile \
-            --platform linux/amd64 \
-            --tag "localhost/deepseek-harness:${RELEASE_VERSION}" \
-            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
-            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
-            --label "org.opencontainers.image.version=${RELEASE_VERSION}" \
-            --output "type=docker,dest=dist/container/${image_tar}" \
-            .
-          gzip -n "dist/container/$image_tar"
-          (
-            cd dist/container
-            sha256sum "$image_archive" > "$image_archive.sha256"
-            sha256sum --check "$image_archive.sha256"
-          )
-          gzip -dc "dist/container/$image_archive" | docker load
-
-      - name: Verify and extract deployment archive
-        shell: bash
-        env:
-          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -euo pipefail
           archive="dsh-container-${RELEASE_VERSION}.tar.gz"
@@ -113,65 +107,201 @@ jobs:
             cd dist/container
             sha256sum --check "$archive.sha256"
           )
-          rm -rf "dist/container/dsh-container-${RELEASE_VERSION}" dist/container/extracted
-          mkdir -p dist/container/extracted
-          tar -xzf "dist/container/$archive" -C dist/container/extracted
+          rm -rf dist/container/verified
+          mkdir -p dist/container/verified
+          tar -xzf "dist/container/$archive" -C dist/container/verified
           pnpm run release:verify-container-bundle \
-            --root "dist/container/extracted/dsh-container-${RELEASE_VERSION}" \
+            --root "dist/container/verified/dsh-container-${RELEASE_VERSION}" \
             --version "$RELEASE_VERSION" \
             --image "localhost/deepseek-harness:${RELEASE_VERSION}"
 
-      - name: Smoke packaged Compose deployment
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-container-deployment-${{ needs.resolve.outputs.version }}
+          path: |
+            dist/container/dsh-container-${{ needs.resolve.outputs.version }}.tar.gz
+            dist/container/dsh-container-${{ needs.resolve.outputs.version }}.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  container-image:
+    name: Package container ${{ matrix.platform }}
+    needs: [resolve, container-bundle]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+            os: ubuntu-24.04
+          - platform: linux/arm64
+            arch: arm64
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dsh-container-deployment-${{ needs.resolve.outputs.version }}
+          path: dist/container
+
+      - name: Verify and extract deployment archive
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          archive="dsh-container-${RELEASE_VERSION}.tar.gz"
+          (
+            cd dist/container
+            sha256sum --check "$archive.sha256"
+          )
+          mkdir -p dist/container/extracted
+          tar -xzf "dist/container/$archive" -C dist/container/extracted
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build native image without registry publication
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          platforms: ${{ matrix.platform }}
+          tags: localhost/deepseek-harness:${{ needs.resolve.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.resolve.outputs.version }}
+          cache-from: type=gha,scope=container-${{ matrix.arch }}
+          cache-to: type=gha,scope=container-${{ matrix.arch }},mode=max
+
+      - name: Save and reload offline image
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+          RELEASE_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          filename="dsh-container-image-${RELEASE_VERSION}-linux-${RELEASE_ARCH}.tar.gz"
+          docker save "localhost/deepseek-harness:${RELEASE_VERSION}" | gzip -n > "dist/container/$filename"
+          (
+            cd dist/container
+            sha256sum "$filename" > "$filename.sha256"
+            sha256sum --check "$filename.sha256"
+          )
+          docker image rm "localhost/deepseek-harness:${RELEASE_VERSION}"
+          gzip -dc "dist/container/$filename" | docker load
+
+      - name: Smoke reloaded image and deployment package
         shell: bash
         env:
           DEEPSEEK_API_KEY: test-only
+          RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+          RELEASE_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          project="dsh-container-${GITHUB_RUN_ID}"
-          compose_file="dist/container/extracted/dsh-container-${{ steps.version.outputs.version }}/docker-compose.yml"
+          image="localhost/deepseek-harness:${RELEASE_VERSION}"
+          container="dsh-image-${RELEASE_ARCH}-${GITHUB_RUN_ID}"
+          project="dsh-compose-${GITHUB_RUN_ID}"
+          compose_file="dist/container/extracted/dsh-container-${RELEASE_VERSION}/docker-compose.yml"
           cleanup() {
-            docker compose --project-name "$project" --file "$compose_file" logs --no-color 2>&1 || true
-            docker compose --project-name "$project" --file "$compose_file" down --volumes --remove-orphans >/dev/null 2>&1 || true
+            docker logs "$container" 2>&1 || true
+            docker rm --force "$container" >/dev/null 2>&1 || true
+            if [[ "$RELEASE_ARCH" == amd64 ]]; then
+              docker compose --project-name "$project" --file "$compose_file" logs --no-color 2>&1 || true
+              docker compose --project-name "$project" --file "$compose_file" down --volumes --remove-orphans >/dev/null 2>&1 || true
+            fi
           }
           trap cleanup EXIT
-          docker compose --project-name "$project" --file "$compose_file" up --detach --wait --wait-timeout 120
-          curl --fail --show-error --silent http://127.0.0.1:4080/ >/dev/null
-          docker compose --project-name "$project" --file "$compose_file" exec --no-TTY dsh \
-            sh -c 'printf release-data > /data/.release-smoke-marker && printf release-workspace > /workspace/.release-smoke-marker'
-          docker compose --project-name "$project" --file "$compose_file" up --detach --force-recreate --wait --wait-timeout 120
-          docker compose --project-name "$project" --file "$compose_file" exec --no-TTY dsh \
-            sh -c 'test "$(cat /data/.release-smoke-marker)" = release-data && test "$(cat /workspace/.release-smoke-marker)" = release-workspace'
+          docker run --detach --name "$container" "$image"
+          for attempt in {1..60}; do
+            status="$(docker inspect --format '{{.State.Health.Status}}' "$container")"
+            [[ "$status" == healthy ]] && break
+            [[ "$status" == unhealthy ]] && exit 1
+            sleep 2
+          done
+          test "$(docker inspect --format '{{.State.Health.Status}}' "$container")" = healthy
+          docker rm --force "$container"
+          if [[ "$RELEASE_ARCH" == amd64 ]]; then
+            docker compose --project-name "$project" --file "$compose_file" up --detach --wait --wait-timeout 120
+            curl --fail --show-error --silent http://127.0.0.1:4080/ >/dev/null
+            docker compose --project-name "$project" --file "$compose_file" exec --no-TTY dsh \
+              sh -c 'printf release-data > /data/.release-smoke-marker && printf release-workspace > /workspace/.release-smoke-marker'
+            docker compose --project-name "$project" --file "$compose_file" up --detach --force-recreate --wait --wait-timeout 120
+            docker compose --project-name "$project" --file "$compose_file" exec --no-TTY dsh \
+              sh -c 'test "$(cat /data/.release-smoke-marker)" = release-data && test "$(cat /workspace/.release-smoke-marker)" = release-workspace'
+          fi
 
-      - name: Upload release assets
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: dsh-container-${{ steps.version.outputs.version }}
+          name: dsh-container-image-${{ needs.resolve.outputs.version }}-linux-${{ matrix.arch }}
           path: |
-            dist/container/*.tar.gz
-            dist/container/*.tar.gz.sha256
+            dist/container/dsh-container-image-${{ needs.resolve.outputs.version }}-linux-${{ matrix.arch }}.tar.gz
+            dist/container/dsh-container-image-${{ needs.resolve.outputs.version }}-linux-${{ matrix.arch }}.tar.gz.sha256
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
 
   release:
-    name: Create GitHub Release
+    name: Publish one verified GitHub Release
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/dsh-v')
-    needs: package
-    runs-on: ubuntu-latest
+    needs: [resolve, desktop, container-bundle, container-image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install release tooling
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
       - uses: actions/download-artifact@v4
         with:
-          name: dsh-container-${{ needs.package.outputs.version }}
           path: artifacts
+
+      - name: Assemble and verify exact release assets
+        run: pnpm exec tsx scripts/release/assemble-github-release.ts --input artifacts --output release-assets --version ${{ needs.resolve.outputs.version }}
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            artifacts/*.tar.gz
-            artifacts/*.tar.gz.sha256
+          files: release-assets/*
           generate_release_notes: true
           fail_on_unmatched_files: true
-          prerelease: ${{ needs.package.outputs.stable != 'true' }}
-          make_latest: false
+          prerelease: ${{ needs.resolve.outputs.stable != 'true' }}
+          make_latest: ${{ needs.resolve.outputs.stable == 'true' }}
+
+      - name: Verify published asset names and update metadata URLs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          expected="$(mktemp)"
+          actual="$(mktemp)"
+          find release-assets -maxdepth 1 -type f -printf '%f\n' | sort > "$expected"
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" --jq '.assets[].name' | sort > "$actual"
+          diff --unified "$expected" "$actual"
+          test "$(wc -l < "$actual")" -eq 29
+          for metadata in latest.yml latest-mac.yml latest-linux.yml latest-linux-arm64.yml; do
+            curl --fail --show-error --silent --retry 3 \
+              "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${metadata}" \
+              -o /dev/null
+          done

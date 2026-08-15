@@ -1,6 +1,9 @@
 /** Release family discovery, publish order, tag naming, and the bump judgements. */
 
-import { describe, expect, it } from 'vitest'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
 import { releaseFamily, type ReleaseMember } from './families.ts'
 import { compareVersions, nextVendorVersion, reachesPayload } from './bump.ts'
 
@@ -14,6 +17,23 @@ import { compareVersions, nextVendorVersion, reachesPayload } from './bump.ts'
 function member(directory: string, name: string, manifest: Record<string, unknown> = {}): ReleaseMember {
   return { directory, name, version: '0.0.1', manifest }
 }
+
+const temporaryRoots: string[] = []
+
+/** Create a minimal manifest beneath a temporary release-family root. */
+function manifest(root: string, directory: string, name: string, privatePackage = false): void {
+  const target = join(root, directory)
+  mkdirSync(target, { recursive: true })
+  writeFileSync(join(target, 'package.json'), `${JSON.stringify({
+    name,
+    version: '0.0.1',
+    ...(privatePackage ? { private: true } : {}),
+  }, null, 2)}\n`)
+}
+
+afterEach(() => {
+  for (const root of temporaryRoots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
 
 describe('release families', () => {
   it('names one tag for the whole dsh family and one per vendored package', () => {
@@ -89,6 +109,28 @@ describe('release families', () => {
   it('drives the installed entry only for the family that publishes one', () => {
     expect(releaseFamily('dsh').installedEntry).toEqual({ packageName: '@deepseek-ai/dsh', binPath: 'lib/bin.js' })
     expect(releaseFamily('vendor').installedEntry).toBeUndefined()
+  })
+
+  it('versions the private desktop app without adding it to the npm publish set', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-release-family-'))
+    temporaryRoots.push(root)
+    manifest(root, 'packages/core/library', '@deepseek-ai/dsh-library')
+    manifest(root, 'apps/cli', '@deepseek-ai/dsh')
+    manifest(root, 'apps/web', '@deepseek-ai/dsh-web-frontend')
+    manifest(root, 'apps/desktop', '@deepseek-ai/dsh-desktop', true)
+
+    const dsh = releaseFamily('dsh')
+    expect(dsh.versionMembers(root).map(entry => entry.name)).toEqual([
+      '@deepseek-ai/dsh',
+      '@deepseek-ai/dsh-desktop',
+      '@deepseek-ai/dsh-web-frontend',
+      '@deepseek-ai/dsh-library',
+    ])
+    expect(dsh.publishMembers(root).map(entry => entry.name)).toEqual([
+      '@deepseek-ai/dsh',
+      '@deepseek-ai/dsh-web-frontend',
+      '@deepseek-ai/dsh-library',
+    ])
   })
 
   it('rejects an unknown family identifier', () => {

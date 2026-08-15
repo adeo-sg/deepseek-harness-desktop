@@ -183,6 +183,27 @@ describe('loadLayeredEnv', () => {
     }
   })
 
+  it('uses an explicit Harness home instead of the inherited DSH_HOME', () => {
+    const inheritedHome = tmp()
+    const explicitHome = tmp()
+    const project = tmp()
+    writeFileSync(join(inheritedHome, '.env'), `${NAMES[1]}=wrong-home\n`)
+    writeFileSync(join(explicitHome, '.env'), `${NAMES[1]}=explicit-home\n`)
+    clear()
+    vi.stubEnv('DSH_HOME', inheritedHome)
+    try {
+      const snapshot = loadLayeredEnv(NAME, project, vi.fn(), explicitHome)
+      expect(snapshot.get(NAMES[1])).toEqual({
+        value: 'explicit-home',
+        source: 'user-env',
+        path: join(explicitHome, '.env'),
+      })
+    } finally {
+      clear()
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('warns and continues when a layer exists but cannot be read', () => {
     const home = tmp()
     const project = tmp()
@@ -580,11 +601,20 @@ describe('boot', () => {
     writeFileSync(join(harnessPlugin, 'package.json'), JSON.stringify({
       name: '@deepseek-ai/dsh-system-prompt',
       type: 'module',
-      exports: './index.mjs',
+      exports: {
+        import: './index.mjs',
+        require: './index.cjs',
+      },
     }))
     writeFileSync(join(harnessPlugin, 'index.mjs'), [
       'export function apply(ctx) {',
       '  ctx.provide("harnessPluginLoaded", true)',
+      '}',
+      '',
+    ].join('\n'))
+    writeFileSync(join(harnessPlugin, 'index.cjs'), [
+      'exports.apply = function apply(ctx) {',
+      '  ctx.provide("requirePluginLoaded", true)',
       '}',
       '',
     ].join('\n'))
@@ -617,11 +647,24 @@ describe('boot', () => {
     const ctx = await boot(NAME, hostOwnedPath, undefined, undefined, harnessBaseUrl)
     try {
       expect(ctx.get('harnessPluginLoaded')).toBe(true)
+      expect(ctx.get('requirePluginLoaded')).toBeUndefined()
       expect(ctx.get('shadowPluginLoaded')).toBeUndefined()
       expect(ctx.get('relativePluginLoaded')).toBe(true)
       expect(ctx.get('absolutePluginLoaded')).toBe(true)
     } finally {
       await ctx.fiber.dispose()
+    }
+    const withoutInternalLoader = await boot(NAME, hostOwnedPath, undefined, (hostCtx) => {
+      hostCtx.loader.internal = undefined
+    }, harnessBaseUrl)
+    try {
+      expect(withoutInternalLoader.get('harnessPluginLoaded')).toBe(true)
+      expect(withoutInternalLoader.get('requirePluginLoaded')).toBeUndefined()
+      expect(withoutInternalLoader.get('shadowPluginLoaded')).toBeUndefined()
+      expect(withoutInternalLoader.get('relativePluginLoaded')).toBe(true)
+      expect(withoutInternalLoader.get('absolutePluginLoaded')).toBe(true)
+    } finally {
+      await withoutInternalLoader.fiber.dispose()
     }
   })
 
@@ -683,6 +726,33 @@ describe('boot', () => {
     } finally {
       await ctx?.fiber.dispose()
       vi.unstubAllEnvs()
+    }
+  })
+
+  it('allows an embedded launcher to use its own data-root resolver', async () => {
+    const dir = tmp()
+    const configuredHome = join(dir, 'embedded-home')
+    writeFileSync(join(dir, 'capture.mjs'), [
+      'export const name = "capture"',
+      'export function apply(ctx, config) {',
+      '  ctx.provide("capturedPath", config.path)',
+      '}',
+      '',
+    ].join('\n'))
+    writeFileSync(join(dir, 'cordis.yml'), [
+      '- id: capture',
+      '  name: ./capture.mjs',
+      '  config:',
+      "    path: !!js dshHomePath('settings.yaml')",
+      '',
+    ].join('\n'))
+    let ctx: Context | undefined
+    try {
+      ctx = await boot(NAME, join(dir, 'cordis.yml'), undefined, undefined, undefined,
+        (...segments: string[]) => join(configuredHome, ...segments))
+      expect(ctx.get('capturedPath')).toBe(join(configuredHome, 'settings.yaml'))
+    } finally {
+      await ctx?.fiber.dispose()
     }
   })
 

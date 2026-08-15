@@ -355,6 +355,29 @@ export function resolveBundleDir(
 }
 
 /**
+ * Resolve and parse one bundle patch layer using the same installation-first
+ * lookup as a profile. Launchers use this for runtime overlays that must not
+ * be persisted in a user's profile manifest.
+ * @param binName - the diagnostic prefix on thrown errors.
+ * @param packageName - the bundle package name.
+ * @param installAnchor - absolute path of the dsh app's package.json (first resolution anchor).
+ * @param profileDir - the active profile directory (second resolution anchor).
+ * @returns the resolved and parsed bundle layer.
+ */
+export function loadBundleLayer(
+  binName: string, packageName: string, installAnchor: string, profileDir: string,
+): ProfileLayer {
+  const packageDir = resolveBundleDir(binName, packageName, installAnchor, profileDir)
+  const bundleManifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as ProfileManifest
+  const declared = bundleManifest.dsh?.bundle?.patch
+  if (declared === undefined) {
+    throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`)
+  }
+  const patchPath = join(packageDir, declared)
+  return { packageName, packageDir, patchPath, patches: loadOverlayPatches(binName, patchPath) }
+}
+
+/**
  * Load a profile: resolve every `dsh.profile.bundles` entry to its patch
  * layer and parse the profile's own patch file. A listed bundle without a
  * `dsh.bundle` manifest fails loud — naming a bundle-less package as a layer
@@ -385,16 +408,7 @@ export function loadProfile(
   const manifest = normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
   // A hand-written profile manifest may omit the dsh section entirely.
   const bundles = manifest.dsh?.profile?.bundles ?? []
-  const layers = bundles.map((packageName): ProfileLayer => {
-    const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir)
-    const bundleManifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as ProfileManifest
-    const declared = bundleManifest.dsh?.bundle?.patch
-    if (declared === undefined) {
-      throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`)
-    }
-    const patchPath = join(packageDir, declared)
-    return { packageName, packageDir, patchPath, patches: loadOverlayPatches(binName, patchPath) }
-  })
+  const layers = bundles.map(packageName => loadBundleLayer(binName, packageName, installAnchor, dir))
   const patchPath = join(dir, PROFILE_PATCH_FILENAME)
   const patches = options.userLayer !== false && existsSync(patchPath)
     ? loadOverlayPatches(binName, patchPath)

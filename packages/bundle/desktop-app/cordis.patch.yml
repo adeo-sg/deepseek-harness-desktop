@@ -65,3 +65,11 @@
     # package, so the browser composition stays untouched.
     - id: window-controls
       name: '@deepseek-ai/dsh-client-ui-window-controls'
+
+    # Update discovery UI: the non-intrusive update banner on the frame's
+    # floating layer plus the General-settings update preferences (auto-check,
+    # channel, auto-download, manual check). The main-process updater feeds it
+    # over the preload's `updates` surface. Web rows never include this
+    # package, so the browser composition stays untouched.
+    - id: update-banner
+      name: '@deepseek-ai/dsh-client-ui-updater'

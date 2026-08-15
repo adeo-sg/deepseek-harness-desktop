@@ -1,0 +1,77 @@
+diff --git a/out/providers/GitHubProvider.js b/out/providers/GitHubProvider.js
+index e768d24e7a957caf32a4b8ca6c68cb50eb5865ee..5cbcec4f5d7c5153d7cb960875036b3a59e3e249 100644
+--- a/out/providers/GitHubProvider.js
++++ b/out/providers/GitHubProvider.js
+@@ -8,6 +8,14 @@ const url_1 = require("url");
+ const util_1 = require("../util");
+ const Provider_1 = require("./Provider");
+ const hrefRegExp = /\/tag\/(v?[^/]+)$/;
++const dshTagPrefix = "dsh-v";
++function versionFromTag(tag) {
++    const version = semver.valid(tag);
++    if (version !== null) {
++        return version;
++    }
++    return tag.startsWith(dshTagPrefix) ? semver.valid(tag.slice(dshTagPrefix.length)) : null;
++}
+ class BaseGitHubProvider extends Provider_1.Provider {
+     constructor(options, defaultHost, runtimeOptions) {
+         super({
+@@ -66,11 +74,12 @@ class GitHubProvider extends BaseGitHubProvider {
+                         }
+                         // This Release's Tag
+                         const hrefTag = hrefElement[1];
+-                        if (!semver.valid(hrefTag)) {
++                        const hrefVersion = versionFromTag(hrefTag);
++                        if (hrefVersion === null) {
+                             continue;
+                         }
+                         //Get Channel from this release's tag
+-                        const hrefChannel = ((_c = semver.prerelease(hrefTag)) === null || _c === void 0 ? void 0 : _c[0]) || null;
++                        const hrefChannel = ((_c = semver.prerelease(hrefVersion)) === null || _c === void 0 ? void 0 : _c[0]) || null;
+                         const shouldFetchVersion = !currentChannel || ["alpha", "beta"].includes(currentChannel);
+                         const isCustomChannel = hrefChannel !== null && !["alpha", "beta"].includes(String(hrefChannel));
+                         // Allow moving from alpha to beta but not down
+@@ -129,8 +138,9 @@ class GitHubProvider extends BaseGitHubProvider {
+         };
+         try {
+             let channel = this.channel;
+-            if (this.updater.allowPrerelease && ((_d = semver.prerelease(tag)) === null || _d === void 0 ? void 0 : _d[0])) {
+-                channel = this.getCustomChannelName(String((_e = semver.prerelease(tag)) === null || _e === void 0 ? void 0 : _e[0]));
++            const tagVersion = versionFromTag(tag);
++            if (this.updater.allowPrerelease && tagVersion !== null && ((_d = semver.prerelease(tagVersion)) === null || _d === void 0 ? void 0 : _d[0])) {
++                channel = this.getCustomChannelName(String((_e = semver.prerelease(tagVersion)) === null || _e === void 0 ? void 0 : _e[0]));
+             }
+             rawData = await fetchData(channel);
+         }
+@@ -194,11 +204,11 @@ function computeReleaseNotes(currentVersion, isFullChangelog, feed, latestReleas
+     if (!isFullChangelog) {
+         return getNoteValue(latestRelease);
+     }
+-    const releaseVersionRegExp = /\/tag\/v?([^/]+)$/;
++    const releaseVersionRegExp = /\/tag\/([^/]+)$/;
+     let latestVersion = undefined;
+     try {
+-        latestVersion = releaseVersionRegExp.exec(latestRelease.element("link").attribute("href"))[1];
+-        latestVersion = semver.valid(latestVersion) ? latestVersion : undefined;
++        const latestTag = releaseVersionRegExp.exec(latestRelease.element("link").attribute("href"))[1];
++        latestVersion = versionFromTag(latestTag) || undefined;
+     }
+     catch {
+         // If we cannot parse the latest release version, return null — notes cannot be determined
+@@ -214,13 +224,13 @@ function computeReleaseNotes(currentVersion, isFullChangelog, feed, latestReleas
+             if (!match) {
+                 continue;
+             }
+-            versionRelease = match[1];
++            versionRelease = versionFromTag(match[1]);
+         }
+         catch {
+             continue;
+         }
+         // skip non-semver tags (e.g. doc/website releases in monorepos)
+-        if (!semver.valid(versionRelease)) {
++        if (versionRelease === null) {
+             continue;
+         }
+         const isGreaterThanCurrent = semver.gt(versionRelease, currentVersion.raw);

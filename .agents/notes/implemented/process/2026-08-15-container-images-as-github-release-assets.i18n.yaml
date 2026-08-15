@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-15-container-images-as-github-release-assets.md
-2026-08-15-container-images-as-github-release-assets.md: 3348312d0859165f3cac54754ea01c6fe344fb74
-2026-08-15-container-images-as-github-release-assets.zh.md: fcf050da6041cee85b5d5b86725bf5cecefc1fa7

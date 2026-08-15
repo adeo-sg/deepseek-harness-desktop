@@ -9,6 +9,7 @@
 
 import { BrowserWindow, ipcMain } from 'electron'
 import { IPC_CHANNELS, type DesktopBridgeHost, type DesktopBridgeRequest } from './bridge-types.ts'
+import type { DesktopUpdater } from './update.ts'
 
 /** Per-subscription-id abort controllers for the downlink pumps. */
 const pumps = new Map<string, AbortController>()
@@ -122,5 +123,34 @@ export function registerWindowIpc(): void {
   ipcMain.handle(IPC_CHANNELS.windowState, (event): { maximized: boolean } => {
     const win = BrowserWindow.fromWebContents(event.sender)
     return { maximized: win?.isMaximized() ?? false }
+  })
+}
+
+/** Update actions the renderer may request; anything else is ignored at the wire. */
+const UPDATE_ACTIONS = ['check', 'download', 'install', 'open-release-page'] as const
+
+type UpdateAction = typeof UPDATE_ACTIONS[number]
+
+/** Narrow a wire value to the known update actions. */
+function isUpdateAction(value: unknown): value is UpdateAction {
+  return typeof value === 'string' && (UPDATE_ACTIONS as readonly string[]).includes(value)
+}
+
+/**
+ * Register the auto-update IPC surface: the state poll (`dsh:update-get-state`)
+ * and the one-shot actions (`dsh:update-action`); the main process pushes
+ * transitions on `dsh:update-state` from the updater itself.
+ * @param updater - the installed updater surface.
+ */
+export function registerUpdateIpc(updater: DesktopUpdater): void {
+  ipcMain.handle(IPC_CHANNELS.updateGetState, () => updater.getState())
+  ipcMain.on(IPC_CHANNELS.updateAction, (_event, action: unknown) => {
+    if (!isUpdateAction(action)) return
+    switch (action) {
+      case 'check': void updater.checkNow(); break
+      case 'download': void updater.download(); break
+      case 'install': updater.install(); break
+      case 'open-release-page': updater.openReleasePage(); break
+    }
   })
 }

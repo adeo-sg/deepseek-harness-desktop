@@ -8,7 +8,7 @@ English | [中文](2026-08-10-npm-release-sequences.zh.md)
 
 This repository held three unrelated groups of publishable packages and no channel that sent any of them to a registry.
 
-`packages/*/*` and `apps/*` form the runtime surface of `@deepseek-ai/dsh`; `vendor/*` holds nine rescoped Cordis framework packages, each carrying its upstream version; `native/landlock-run/packages/*` holds Linux platform packages with their own workflow. The three differ in version baseline, change rate, and build requirements: dsh moves with the product, vendor moves only when upstream is re-synced or a local modification changes, and native needs a musl toolchain and one build per architecture. Forcing them through one pipeline means every product release republishes the framework and the native binaries.
+`packages/*/*` and `apps/*` share the dsh product version, while npm publication contains every package except the private `apps/desktop` application; `vendor/*` holds nine rescoped Cordis framework packages, each carrying its upstream version; `native/landlock-run/packages/*` holds Linux platform packages with their own workflow. The three differ in version baseline, change rate, and build requirements: dsh moves with the product, vendor moves only when upstream is re-synced or a local modification changes, and native needs a musl toolchain and one build per architecture. Forcing them through one pipeline means every product release republishes the framework and the native binaries.
 
 Two hard blockers sat in the way. All 217 workspace manifests set `private: true`, which npm refuses to publish. The subtler one was 933 hand-written `peerDependencies: "^0.0.1"` entries between sibling dsh packages: `pnpm pack` substitutes the `workspace:` protocol but leaves semver ranges alone, and `^0.0.1` means `>=0.0.1 <0.0.2` — it excludes `0.0.2`, and semver excludes prereleases from a range without a prerelease of its own, so it excluded `0.0.1-rc.1` too. Those entries never failed only because the version never left `0.0.1`.
 
@@ -22,7 +22,7 @@ Two hard blockers sat in the way. All 217 workspace manifests set `private: true
 
 | Sequence | Members | Version baseline | Tag | Workflow |
 |---|---|---|---|---|
-| dsh | `packages/*/*` + `apps/*` (`@deepseek-ai/dsh` and `@deepseek-ai/dsh-web-frontend`) | one version for the family and the workspace root, `0.0.x` | `dsh-v<version>` | `release.yml` |
+| dsh | version: `packages/*/*` + `apps/*`; npm publish: all except private `apps/desktop` | one version for the family and the workspace root, `0.0.x` | `dsh-v<version>` | `release.yml` |
 | vendored framework | the nine `vendor/*` packages | each package on its own version line | `vendor-<package>-v<version>` (one per package) | `release-vendor.yml` |
 | native | `native/landlock-run/packages/*` | its own `0.0.x` | `landlock-run-v<version>` | `landlock-run-release.yml` |
 
@@ -86,8 +86,8 @@ The entity in this domain is a **release family**: a set of packages sharing one
 
 | Object | Responsibility |
 |---|---|
-| `ReleaseFamily` | a family's identity: member discovery, version baseline, tag prefix, packed-payload rule, installed entry |
-| `ReleaseMember` | one publishable package: directory, name, version, manifest |
+| `ReleaseFamily` | a family's identity: version and publish member discovery, version baseline, tag prefix, packed-payload rule, installed entry |
+| `ReleaseMember` | one versioned manifest; publish members are the subset packed for npm |
 | `publishOrder` | topological order over runtime dependencies, ties broken by package name; a cycle is reported rather than resolved arbitrarily |
 | `pack` | packs a whole family into one directory and records the upload order |
 | `verify` | the family's version baseline, and — when publishing — that the run comes from that family's tag and its members are publishable |
@@ -112,7 +112,7 @@ The verification also packs the Landlock entry, which `dsh-sandbox-local` declar
 | Item | Content |
 |---|---|
 | release-set manifests | `private: true` removed; `publishConfig.access` per sequence and `repository` with each package's `directory` added |
-| release-set boundary | every member of `packages/*/*`, `apps/*`, and `vendor/*` |
+| release-set boundary | dsh versions `packages/*/*` and `apps/*`, but publishes only `packages/*/*`, `apps/cli`, and `apps/web`; vendor publishes every `vendor/*` member |
 | dependency protocol | workspace-internal references are `workspace:^`, with `check-workspace-constraints.ts` and the invariant-companion rule requiring it |
 | root `AGENTS.md` | the convention that vendored packages are `private: true` no longer holds |
 | `vendor/README.md` | records `src` joining `cordis`'s `files` as a local modification |

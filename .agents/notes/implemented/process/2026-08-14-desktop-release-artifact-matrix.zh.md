@@ -12,7 +12,7 @@ Status: implemented
 
 workflow 在原生 GitHub 托管 runner 上为每个支持的桌面目标打包。矩阵包含 Windows x64 与 arm64、macOS x64 与 arm64，以及 Linux x64 与 arm64。Windows 生成 NSIS 安装程序和 ZIP 压缩包；macOS 生成 DMG 和 ZIP 压缩包；Linux 生成 AppImage、DEB、RPM 和 `tar.gz` 压缩包。builder 将产品、版本、操作系统和架构写入每个文件名，因此产物合并到一个 release 后仍然不会产生歧义。macOS 发布分别对应架构的产物，因为打包应用含有 native 模块，托管 ARM runner 上的 universal builder 无法可靠合并这些模块。
 
-release job 下载矩阵的全部产物，在缺少预期文件时失败，写出排序后的 `SHA256SUMS` 文件，并将预发布 tag 标记为 prerelease，同时让稳定 tag 具备成为 latest release 的资格。必须使用原生 runner，因为打包应用含有平台相关依赖，x64 交叉构建无法证明 arm64 产物能启动。代码签名和 macOS notarization 仍属于部署输入：workflow 会关闭无证书 CI 构建的自动证书发现，也不会声称未签名产物已经 notarize。
+Desktop 工作流只用于复用和手动运行。[统一 dsh 产物工作流](2026-08-15-unified-native-release-assets.md)会在 `dsh-v<version>` tag 上调用它，并将矩阵与容器资产一起发布。release 汇总器会拒绝缺失或多余文件，通过结构化 YAML 合并 Windows 与 macOS 的 x64 和 arm64 updater 条目，保留架构特定的 Linux channel 文件与 macOS blockmap，并写出汇总 `SHA256SUMS`。必须使用原生 runner，因为打包应用含有平台相关依赖，x64 交叉构建无法证明 arm64 产物能启动。代码签名和 macOS notarization 仍属于部署输入：workflow 会关闭无证书 CI 构建的自动证书发现，也不会声称未签名产物已经 notarize。
 
 ## Alternatives considered
 
@@ -28,4 +28,4 @@ release job 下载矩阵的全部产物，在缺少预期文件时失败，写�
 
 ## Consequences
 
-每个 tag release 都会携带六种带架构标识的目标组合、Windows、macOS 和 Linux 安装及便携产物，并附带 checksum 文件。矩阵执行时间更长，也依赖原生托管 runner 标签的可用性，但平台特有的失败会在发布前暴露。若发行基础设施没有提供签名和 notarization 配置，发布文件仍然是未签名的；商业化交付在把构建视为已 notarize 之前，必须补充这些凭据并校验最终信任元数据。
+每个带 tag 的 dsh release 都会携带六种带架构标识的目标组合、Windows、macOS 和 Linux 安装及便携产物、更新元数据和 checksum。矩阵执行时间更长，也依赖原生托管 runner 标签的可用性，但平台特有的失败会在发布前暴露。若发行基础设施没有提供签名和 notarization 配置，发布文件仍然是未签名的；商业化交付在把构建视为已 notarize 之前，必须补充这些凭据并校验最终信任元数据。

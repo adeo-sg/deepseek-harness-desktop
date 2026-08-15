@@ -8,7 +8,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron'
-import { IPC_CHANNELS, type DesktopBridge, type DesktopBridgeResponse, type DesktopBridgeSubscription, type DesktopWindowControls } from '../bridge-types.ts'
+import { IPC_CHANNELS, type DesktopBridge, type DesktopBridgeResponse, type DesktopBridgeSubscription, type DesktopUpdateState, type DesktopUpdates, type DesktopWindowControls } from '../bridge-types.ts'
 
 let subscriptionCounter = 0
 
@@ -22,6 +22,20 @@ const windowControls: DesktopWindowControls = {
     const handler = (_event: unknown, maximized: boolean): void => { listener(maximized) }
     ipcRenderer.on(IPC_CHANNELS.windowMaximized, handler)
     return () => { ipcRenderer.removeListener(IPC_CHANNELS.windowMaximized, handler) }
+  },
+}
+
+/** The auto-update surface: state poll, one-shot actions, and pushed transitions. */
+const updates: DesktopUpdates = {
+  getState: () => ipcRenderer.invoke(IPC_CHANNELS.updateGetState) as Promise<DesktopUpdateState>,
+  check: () => { ipcRenderer.send(IPC_CHANNELS.updateAction, 'check') },
+  download: () => { ipcRenderer.send(IPC_CHANNELS.updateAction, 'download') },
+  install: () => { ipcRenderer.send(IPC_CHANNELS.updateAction, 'install') },
+  openReleasePage: () => { ipcRenderer.send(IPC_CHANNELS.updateAction, 'open-release-page') },
+  onState: (listener: (state: DesktopUpdateState) => void): (() => void) => {
+    const handler = (_event: unknown, state: DesktopUpdateState): void => { listener(state) }
+    ipcRenderer.on(IPC_CHANNELS.updateState, handler)
+    return () => { ipcRenderer.removeListener(IPC_CHANNELS.updateState, handler) }
   },
 }
 
@@ -50,7 +64,18 @@ const bridge: DesktopBridge = {
       onEnd: (endListener: () => void) => { endListeners.add(endListener) },
     }
   },
+  onOpenSession: (listener: (sessionId: string) => void): (() => void) => {
+    const handler = (_event: unknown, payload: { sessionId: string }): void => { listener(payload.sessionId) }
+    ipcRenderer.on(IPC_CHANNELS.openSession, handler)
+    return () => { ipcRenderer.removeListener(IPC_CHANNELS.openSession, handler) }
+  },
+  onNewSession: (listener: () => void): (() => void) => {
+    const handler = (_event: unknown): void => { listener() }
+    ipcRenderer.on(IPC_CHANNELS.newSession, handler)
+    return () => { ipcRenderer.removeListener(IPC_CHANNELS.newSession, handler) }
+  },
   windowControls,
+  updates,
 }
 
 contextBridge.exposeInMainWorld('desktopBridge', bridge)

@@ -8,7 +8,7 @@ Status: implemented
 
 这个仓库有三组互不相干的可发布包，却没有任何发布通道把它们送上 registry。
 
-`packages/*/*` 与 `apps/*` 组成 `@deepseek-ai/dsh` 的运行面；`vendor/*` 是九个 rescope 过的 Cordis 框架包，各自带着上游的版本号；`native/landlock-run/packages/*` 是 Linux 平台包，有自己的 workflow。三组的版本基线、变更节奏和构建要求都不同：dsh 随产品迭代，vendor 只在同步上游或改动本地修改时才动，native 需要 musl 工具链和逐架构构建。把它们塞进一条发布流水线，等于每次产品发版都要重发框架和原生二进制。
+`packages/*/*` 与 `apps/*` 共享 dsh 产品版本，而 npm 发布包含私有 `apps/desktop` 应用之外的所有包；`vendor/*` 是九个 rescope 过的 Cordis 框架包，各自带着上游的版本号；`native/landlock-run/packages/*` 是 Linux 平台包，有自己的 workflow。三组的版本基线、变更节奏和构建要求都不同：dsh 随产品迭代，vendor 只在同步上游或改动本地修改时才动，native 需要 musl 工具链和逐架构构建。把它们塞进一条发布流水线，等于每次产品发版都要重发框架和原生二进制。
 
 挡路的还有两处硬门。全部 217 个 workspace manifest 都是 `private: true`，`npm publish` 直接拒绝。更隐蔽的是 933 条 dsh 兄弟包之间硬写的 `peerDependencies: "^0.0.1"`：`pnpm pack` 只替换 `workspace:` 协议，不动语义范围，而 `^0.0.1` 等于 `>=0.0.1 <0.0.2`——发 `0.0.2` 落不进去，发 `0.0.1-rc.1` 也落不进去（semver 规定不带预发布段的范围排除预发布版本）。这些条目至今没出事，只因为版本一直停在 `0.0.1`。
 
@@ -22,7 +22,7 @@ Status: implemented
 
 | 序列 | 成员 | 版本基线 | tag | workflow |
 |---|---|---|---|---|
-| dsh | `packages/*/*` + `apps/*`（`@deepseek-ai/dsh` 与 `@deepseek-ai/dsh-web-frontend`） | 全族与 workspace 根共用一个 `0.0.x` | `dsh-v<版本>` | `release.yml` |
+| dsh | 版本：`packages/*/*` + `apps/*`；npm 发布：私有 `apps/desktop` 之外的所有成员 | 全族与 workspace 根共用一个 `0.0.x` | `dsh-v<版本>` | `release.yml` |
 | vendored framework | `vendor/*` 九个包 | 每包各自一条版本线 | `vendor-<包名>-v<版本>`（每包一个） | `release-vendor.yml` |
 | native | `native/landlock-run/packages/*` | 自己的 `0.0.x` | `landlock-run-v<版本>` | `landlock-run-release.yml` |
 
@@ -86,8 +86,8 @@ registry 的两个行为决定了「怎么尝试一次发布」。写入之间�
 
 | 对象 | 职责 |
 |---|---|
-| `ReleaseFamily` | 一族的身份：成员发现、版本基线、tag 前缀、打包 payload 规则、已安装入口 |
-| `ReleaseMember` | 一个可发布包：目录、包名、版本、manifest |
+| `ReleaseFamily` | 一族的身份：版本成员与发布成员发现、版本基线、tag 前缀、打包 payload 规则、已安装入口 |
+| `ReleaseMember` | 一个带版本的 manifest；发布成员是其中为 npm 打包的子集 |
 | `publishOrder` | 按运行时依赖的拓扑序，同层按包名排；遇到环是报错而不是随意定序 |
 | `pack` | 把整族打进一个目录并记录上传顺序 |
 | `verify` | 族的版本基线；发布时还要求本次运行来自该族的 tag、且成员可发布 |
@@ -112,7 +112,7 @@ dsh 的验证会一并安装 vendored 族的 pack 产物。harness 的包把 ven
 | 项 | 内容 |
 |---|---|
 | 发布集 manifest | 去掉 `private: true`；按序列补 `publishConfig.access` 与带各自 `directory` 的 `repository` |
-| 发布集边界 | `packages/*/*`、`apps/*`、`vendor/*` 的全部成员 |
+| 发布集边界 | dsh 为 `packages/*/*` 与 `apps/*` 统一版本，但只发布 `packages/*/*`、`apps/cli` 和 `apps/web`；vendor 发布全部 `vendor/*` 成员 |
 | 依赖协议 | workspace 内部引用为 `workspace:^`，由 `check-workspace-constraints.ts` 与 invariant companion 规则强制 |
 | 根 `AGENTS.md` | 「vendored 包是 `private: true`」这条约定不再成立 |
 | `vendor/README.md` | 记录「`src` 加入 `cordis` 的 `files`」这条本地修改 |

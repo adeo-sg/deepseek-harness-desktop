@@ -1,7 +1,7 @@
 /**
  * User patch-layer behavior of `dsh-app-boot`: the optional patch-list loader
  * (a profile's `cordis.patch.yml`) and `boot()` applying the user layer over
- * a real Loader tree, kept live through transactional HMR.
+ * a real Loader tree, kept live through transactional config watching.
  */
 
 import { mkdirSync, mkdtempSync, unlinkSync, writeFileSync } from 'node:fs'
@@ -371,10 +371,18 @@ describe('boot with user patches', () => {
     }
   })
 
-  it('fails loud when the exact watcher lacks HMR or a root Include', async () => {
+  it('uses the exact-path fallback without HMR and still requires a root Include', async () => {
     const dir = tmp()
     const withoutHmr = await boot(NAME, writeTree(dir))
-    await expect(watchUserPatches(withoutHmr, { binName: NAME, filename: join(tmp(), PROFILE_PATCH_FILENAME) })).rejects.toThrow('requires the Cordis HMR service')
+    const nestedFilename = join(dir, 'new-profile', PROFILE_PATCH_FILENAME)
+    const dispose = await watchUserPatches(withoutHmr, { binName: NAME, filename: nestedFilename })
+    mkdirSync(join(dir, 'new-profile'))
+    writeFileSync(nestedFilename, '- id: noop\n  config:\n    value: fallback\n')
+    await eventually(
+      () => (entryConfig(withoutHmr, 'noop') as { value?: string }).value === 'fallback',
+      'exact-path fallback did not apply the user patch',
+    )
+    await dispose()
     await withoutHmr.fiber.dispose()
 
     const withoutInclude = new Context()
@@ -384,7 +392,7 @@ describe('boot with user patches', () => {
     await withoutInclude.plugin(Hmr, { root: [], ignored: [], debounce: 0 })
     await expect(watchUserPatches(withoutInclude, { binName: NAME, filename: join(tmp(), PROFILE_PATCH_FILENAME) })).rejects.toThrow('requires the root Include entry')
     await withoutInclude.fiber.dispose()
-  })
+  }, 15_000)
 
   it('returns a no-op disposer when the tree is disposed while the watcher opens', async () => {
     // A surface can dispose the whole tree while registerConfig's effect

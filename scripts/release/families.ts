@@ -1,8 +1,9 @@
 /**
  * The three independent publish sequences this repository releases from
- * (`packages/` + `apps/`, `vendor/`, and `native/`) and the two this module
- * owns: `dsh` and `vendor`. Each family carries its own version baseline, tag
- * naming, and publish set, so releasing one never republishes another
+ * (`packages/` + publishable `apps/`, `vendor/`, and `native/`) and the two this
+ * module owns: `dsh` and `vendor`. Each family carries its own version baseline,
+ * tag naming, version members, and publish members, so releasing one never
+ * republishes another
  * ([rationale](../../.agents/notes/implemented/process/2026-08-10-npm-release-sequences.md)).
  *
  * The family dimension lives here only. A new sequence adds a subclass and a
@@ -70,8 +71,11 @@ export abstract class ReleaseFamily {
   /** Workflow-facing identifier, also the `--family` argument. */
   abstract readonly id: string
 
-  /** Glob patterns, relative to the repository root, that select this family's manifests. */
-  abstract readonly patterns: readonly string[]
+  /** Glob patterns, relative to the repository root, that select manifests sharing this family's version policy. */
+  abstract readonly versionPatterns: readonly string[]
+
+  /** Glob patterns, relative to the repository root, that select manifests published to npm. */
+  abstract readonly publishPatterns: readonly string[]
 
   /** Git tag prefix this family publishes from. */
   abstract readonly tagPrefix: string
@@ -81,9 +85,39 @@ export abstract class ReleaseFamily {
    * @param root - repository root.
    * @returns Members sorted by directory, with names validated and deduplicated.
    */
-  members(root: string): ReleaseMember[] {
-    const manifestPaths = globSync([...this.patterns], { cwd: root }).sort()
-    if (manifestPaths.length === 0) throw new Error(`release family ${this.id} matched no manifests`)
+  versionMembers(root: string): ReleaseMember[] {
+    return this.discoverMembers(root, this.versionPatterns, 'version')
+  }
+
+  /**
+   * Discover this family's npm publish members.
+   * @param root - repository root.
+   * @returns Publishable members sorted by directory, with names validated and deduplicated.
+   */
+  publishMembers(root: string): ReleaseMember[] {
+    const versionMembers = this.versionMembers(root)
+    const versionDirectories = new Set(versionMembers.map(member => member.directory))
+    const publishMembers = this.discoverMembers(root, this.publishPatterns, 'publish')
+    const outsideVersionSet = publishMembers.filter(member => !versionDirectories.has(member.directory))
+    if (outsideVersionSet.length > 0) {
+      throw new Error(
+        `release family ${this.id} publishes members outside its version set:\n`
+        + outsideVersionSet.map(member => member.directory).join('\n'),
+      )
+    }
+    return publishMembers
+  }
+
+  /**
+   * Read members selected by one family role.
+   * @param root - repository root.
+   * @param patterns - manifest globs for the role.
+   * @param role - role named in diagnostics.
+   * @returns Members sorted by directory.
+   */
+  private discoverMembers(root: string, patterns: readonly string[], role: 'version' | 'publish'): ReleaseMember[] {
+    const manifestPaths = globSync([...patterns], { cwd: root }).sort()
+    if (manifestPaths.length === 0) throw new Error(`release family ${this.id} matched no ${role} manifests`)
 
     const members: ReleaseMember[] = []
     const seen = new Set<string>()
@@ -193,10 +227,15 @@ export abstract class ReleaseFamily {
   abstract readonly installedEntry: InstalledEntry | undefined
 }
 
-/** `packages/*` and `apps/*`: one shared version across the whole family. */
+/** `packages/*` and `apps/*` share a version; the private desktop app is not published to npm. */
 class DshFamily extends ReleaseFamily {
   readonly id = 'dsh'
-  readonly patterns = ['packages/*/*/package.json', 'apps/*/package.json'] as const
+  readonly versionPatterns = ['packages/*/*/package.json', 'apps/*/package.json'] as const
+  readonly publishPatterns = [
+    'packages/*/*/package.json',
+    'apps/cli/package.json',
+    'apps/web/package.json',
+  ] as const
   readonly tagPrefix = 'dsh-v'
 
   /**
@@ -234,7 +273,8 @@ class DshFamily extends ReleaseFamily {
 /** `vendor/*`: every package keeps its own version line, so every package has its own tag. */
 class VendorFamily extends ReleaseFamily {
   readonly id = 'vendor'
-  readonly patterns = ['vendor/*/package.json'] as const
+  readonly versionPatterns = ['vendor/*/package.json'] as const
+  readonly publishPatterns = ['vendor/*/package.json'] as const
   readonly tagPrefix = 'vendor-'
 
   /**

@@ -40,6 +40,14 @@ export interface ISessions {
    */
   open(id: SessionId): void
   /**
+   * Repull the full session baseline, reusing an in-flight pull. Shell
+   * surfaces that receive an id the list mirror may not have loaded yet (the
+   * desktop tray's session menu lists the whole host corpus) call this before
+   * {@link open}.
+   * @returns completion of the current or newly started baseline pull.
+   */
+  refresh(): Promise<void>
+  /**
    * Open a healthy catalog child through its exact direct-parent address.
    * @param address - catalog-derived parent and child ids.
    */

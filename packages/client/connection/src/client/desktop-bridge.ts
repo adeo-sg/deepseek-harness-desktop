@@ -9,6 +9,7 @@
  */
 
 import type { ServerRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /** One unary/respond round-trip request, clone-safe for contextBridge. */
 export interface DesktopBridgeRequest {
@@ -67,6 +68,66 @@ export interface DesktopWindowControls {
   onMaximizedChanged(listener: (maximized: boolean) => void): () => void
 }
 
+/** Update phases the desktop shell's auto-update controller reports. */
+export type DesktopUpdatePhase =
+  | 'disabled'
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'installing'
+
+/** Download progress carried in the `downloading` update state. */
+export interface DesktopUpdateProgress {
+  percent: number
+  transferred: number
+  total: number
+  bytesPerSecond: number
+}
+
+/** One update-state snapshot pushed by the main process updater. */
+export interface DesktopUpdateState {
+  phase: DesktopUpdatePhase
+  /** Whether this build can download and hand off its platform installer. */
+  canInstall: boolean
+  /** Version the updater is offering or installing, while one is known. */
+  version?: string
+  /** GitHub release title, when the provider reported one. */
+  releaseName?: string
+  /** GitHub release body markdown, when the provider reported one. */
+  releaseNotes?: string
+  /** Download progress; present while the phase is `downloading`. */
+  progress?: DesktopUpdateProgress
+  /** Human-readable driver failure; cleared by the next check. */
+  error?: string
+}
+
+/**
+ * The auto-update surface a renderer may use when it runs inside the Electron
+ * app. Rendered by this repo's update banner plugin
+ * (`dsh-client-ui-updater`); absent in the browser composition. The main
+ * process owns the state machine; the renderer polls once and follows pushes.
+ */
+export interface DesktopUpdates {
+  /** Read the current update state (the initial poll; transitions arrive on {@link onState}). */
+  getState(): Promise<DesktopUpdateState>
+  /** Ask for a quiet check now. */
+  check(): void
+  /** Start downloading the offered update when {@link DesktopUpdateState.canInstall} is true. */
+  download(): void
+  /** Quit and run the downloaded installer when {@link DesktopUpdateState.canInstall} is true. */
+  install(): void
+  /** Open the release page in the default browser (unsigned Phase A fallback). */
+  openReleasePage(): void
+  /**
+   * Subscribe to update-state transitions.
+   * @param listener - called with each new state.
+   * @returns the detach function.
+   */
+  onState(listener: (state: DesktopUpdateState) => void): () => void
+}
+
 /**
  * The desktop shell surface a renderer may use when it runs inside the
  * Electron app (exposed as `window.desktopBridge` by the preload; the
@@ -84,8 +145,20 @@ export interface DesktopBridge {
    * @param listener - per-frame callback.
    */
   subscribe(stream: 'mux' | 'host', listener: (frame: ServerRequest) => void): DesktopBridgeSubscription
+  /**
+   * Subscribe to tray "open session" commands from the Electron main process.
+   * The desktop shell's tray menu lists the host corpus; the listener opens
+   * the requested session in the shell.
+   * @param listener - per-command callback with the target session id.
+   * @returns the detach function.
+   */
+  onOpenSession(listener: (sessionId: SessionId) => void): () => void
+  /** Subscribe to tray "new session" commands from the Electron main process. */
+  onNewSession(listener: () => void): () => void
   /** The desktop app version, for diagnostics. */
   version: string
   /** Custom window controls (frameless shell); present only in the desktop preload. */
   windowControls?: DesktopWindowControls
+  /** Auto-update surface; present only in the desktop preload. */
+  updates?: DesktopUpdates
 }

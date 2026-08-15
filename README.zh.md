@@ -22,13 +22,21 @@ npx @deepseek-ai/dsh web
 
 该命令会启动 Web UI，默认地址为 `http://127.0.0.1:3080`。详见 [Web UI 指南](docs/user/guide/index.md)。
 
+### 安装桌面应用
+
+从 [GitHub Releases](https://github.com/sdkwork-ai/deepseek-harness-desktop/releases) 下载与 CPU 架构匹配的 Windows、macOS 或 Linux 安装包。[桌面安装指南](docs/user/guide/desktop.md)列出了所有安装与便携格式，并说明校验和验证方法。
+
+### 使用 Docker 或 Kubernetes 部署
+
+容器部署使用端口 `4080`，npx/本地运行器仍使用 `3080`。按照[部署指南](docs/user/guide/deployment.md)，可以从源码 clone 构建，也可以安装 GitHub Releases 中的离线镜像与部署包。
+
 ### 从源码运行
 
 如需从仓库源码运行：
 
 ```sh
-git clone https://github.com/deepseek-ai/deepseek-harness.git
-cd deepseek-harness
+git clone https://github.com/sdkwork-ai/deepseek-harness-desktop.git
+cd deepseek-harness-desktop
 pnpm install
 pnpm run build
 pnpm dsh web

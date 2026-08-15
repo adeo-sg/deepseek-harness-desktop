@@ -236,17 +236,21 @@ describe('E2B e2e workflow', () => {
 })
 
 describe('Desktop release workflow', () => {
-  it('covers native OS and CPU targets before publishing the release', () => {
+  it('covers native OS and CPU targets as a reusable or manual-only package matrix', () => {
     const workflow = loadWorkflow('.github/workflows/desktop-release.yml')
     const packageJob = workflowJob(workflow, 'package')
-    const releaseJob = workflowJob(workflow, 'release')
+    const workflowCall = workflowEvent(workflow, 'workflow_call')
+    const workflowDispatch = workflowEvent(workflow, 'workflow_dispatch')
     if (!isRecord(packageJob.strategy)
       || !isRecord(packageJob.strategy.matrix)
       || !Array.isArray(packageJob.strategy.matrix.include)
-      || !Array.isArray(packageJob.steps)
-      || !Array.isArray(releaseJob.steps)) {
+      || !Array.isArray(packageJob.steps)) {
       throw new TypeError('desktop release package job must define matrix entries and steps')
     }
+    expect(workflowCall).toMatchObject({ inputs: { version: { required: true, type: 'string' } } })
+    expect(workflowDispatch).toMatchObject({ inputs: { version: { required: false, type: 'string' } } })
+    expect(workflow.on).not.toHaveProperty('push')
+    expect(workflow.jobs).not.toHaveProperty('release')
 
     const entries = packageJob.strategy.matrix.include
     expect(entries.map((entry) => {
@@ -272,8 +276,9 @@ describe('Desktop release workflow', () => {
       ['linux-arm64', 'ubuntu-24.04-arm'],
     ])
 
-    const pack = packageJob.steps.filter(isRecord).find(step => step.name === 'Pack installers')
+    const pack = packageJob.steps.filter(isRecord).find(step => step.name === 'Pack installers and update metadata')
     expect(pack?.run).toContain('${{ matrix.builder-args }}')
+    expect(pack?.run).toContain('--publish never')
     expect(entries.filter(entry => isRecord(entry) && String(entry.name).startsWith('macos-')).map((entry) => {
       if (!isRecord(entry)) throw new TypeError('desktop release matrix entries must be records')
       return entry['app-dir']
@@ -281,25 +286,56 @@ describe('Desktop release workflow', () => {
       'release/mac/dsh-desktop.app/Contents/Resources/app',
       'release/mac-arm64/dsh-desktop.app/Contents/Resources/app',
     ])
-    const installerGlobs = entries.map((entry) => {
+    const releaseGlobs = entries.map((entry) => {
       if (!isRecord(entry)) throw new TypeError('desktop release matrix entries must be records')
-      return String(entry.installers)
+      return String(entry['release-files'])
     })
-    for (const globs of installerGlobs.slice(0, 4)) expect(globs).toContain('*.zip')
-    for (const globs of installerGlobs.slice(4)) {
+    for (const globs of releaseGlobs) {
+      expect(globs).toContain('latest*.yml')
+      expect(globs).toContain('*.blockmap')
+    }
+    for (const globs of releaseGlobs.slice(0, 4)) expect(globs).toContain('*.zip')
+    for (const globs of releaseGlobs.slice(4)) {
       expect(globs).toContain('*.deb')
       expect(globs).toContain('*.rpm')
       expect(globs).toContain('*.tar.gz')
     }
-    const checksum = releaseJob.steps.filter(isRecord).find(step => step.name === 'Generate SHA-256 checksums')
-    expect(checksum?.run).toContain('sha256sum')
-    expect(JSON.stringify(releaseJob)).toContain('fail_on_unmatched_files')
-    expect(JSON.stringify(releaseJob)).toContain('prerelease')
-    expect(releaseJob).toMatchObject({
-      if: "startsWith(github.ref, 'refs/tags/')",
-      needs: 'package',
+  })
+
+  it('publishes the Desktop matrix and native container archives from one dsh tag', () => {
+    const workflow = loadWorkflow('.github/workflows/container-release.yml')
+    const push = workflowEvent(workflow, 'push')
+    const desktop = workflowJob(workflow, 'desktop')
+    const image = workflowJob(workflow, 'container-image')
+    const release = workflowJob(workflow, 'release')
+    if (!isRecord(image.strategy) || !isRecord(image.strategy.matrix)
+      || !Array.isArray(image.strategy.matrix.include) || !Array.isArray(release.steps)) {
+      throw new TypeError('unified release must define the container image matrix and release steps')
+    }
+
+    expect(push).toEqual({ tags: ['dsh-v*'] })
+    expect(desktop).toMatchObject({
+      needs: 'resolve',
+      uses: './.github/workflows/desktop-release.yml',
+      with: { version: '${{ needs.resolve.outputs.version }}' },
+    })
+    expect(image.strategy.matrix.include).toEqual([
+      { platform: 'linux/amd64', arch: 'amd64', os: 'ubuntu-24.04' },
+      { platform: 'linux/arm64', arch: 'arm64', os: 'ubuntu-24.04-arm' },
+    ])
+    expect(release).toMatchObject({
+      if: "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/dsh-v')",
+      needs: ['resolve', 'desktop', 'container-bundle', 'container-image'],
       permissions: { contents: 'write' },
     })
+    const serialized = JSON.stringify(workflow)
+    expect(serialized).not.toContain('docker/login-action')
+    expect(serialized).not.toContain('push: true')
+    expect(serialized).not.toContain('packages: write')
+    expect(serialized).toContain('assemble-github-release.ts')
+    expect(serialized).toContain('test \\"$(wc -l < \\"$actual\\")\\" -eq 29')
+    expect(serialized).toContain('latest-linux-arm64.yml')
+    expect(serialized.match(/softprops\/action-gh-release@v2/g)).toHaveLength(1)
   })
 
   it('keeps package architecture out of the electron-builder targets', () => {

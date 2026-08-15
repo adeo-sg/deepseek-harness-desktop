@@ -1,28 +1,27 @@
 /**
- * Boot the harness host tree for the desktop shell: the `desktop` profile
- * composed from the dsh-base, dsh-web-app, and dsh-desktop-app bundles, with
- * the web composition's HTTP carrier swapped for the desktop carrier by the
- * bundle patch. Mirrors the `dsh` CLI's profile boot minus its flag parsing —
- * the desktop app is its own launcher.
+ * Boot the harness host tree for the desktop shell: the canonical `web`
+ * profile plus an in-memory dsh-desktop-app overlay that swaps the HTTP
+ * carrier for Electron IPC. The profile manifest, installed bundles, and
+ * user patches are the same ones the `dsh` CLI loads.
  * @module @deepseek-ai/dsh-desktop/host
  */
 
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import type { Context } from '@deepseek-ai/cordis'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
   boot,
   composeEntries,
   healProfilesModuleFallback,
-  initProfile,
   installFailLoud,
+  loadBundleLayer,
   loadLayeredEnv,
   loadOptionalPatches,
   loadProfile,
   PROFILE_PATCH_FILENAME,
-  resolveProfileDir,
+  watchUserPatches,
 } from '@deepseek-ai/dsh-app-boot'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
@@ -32,15 +31,11 @@ import { createShutdown, type Shutdown } from './shutdown.ts'
 /** Diagnostic prefix for boot and fail-loud lines. */
 const NAME = 'dsh-desktop'
 
-/** The profile name the desktop shell boots. */
-export const PROFILE_NAME = 'desktop'
+/** The canonical profile shared by the Web and desktop launchers. */
+export const PROFILE_NAME = 'web'
 
-/** Bundle layers of the desktop profile, in application order. */
-export const PROFILE_BUNDLES: readonly string[] = [
-  '@deepseek-ai/dsh-base',
-  '@deepseek-ai/dsh-web-app',
-  '@deepseek-ai/dsh-desktop-app',
-]
+/** Installation-owned transport overlay applied without changing the Web profile manifest. */
+export const DESKTOP_OVERLAY_BUNDLE = '@deepseek-ai/dsh-desktop-app'
 
 /** The root config filename inside a profile directory. */
 const PROFILE_ROOT_FILENAME = 'cordis.yml'
@@ -97,9 +92,10 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
 }
 
 /**
- * Boot the desktop profile end to end: initialize the profile directory,
- * heal the module fallback, compose the patch stack (bundles + profile user
- * layer + home layer + telemetry switch), and return the settled tree.
+ * Boot the desktop host end to end: load the canonical Web profile, append
+ * the installation-owned desktop transport overlay, and return the settled
+ * tree. The Web profile manifest and user patches remain the single source
+ * for both launchers.
  * @param options - home/cwd/args overrides (tests).
  * @returns the settled root context and the shutdown controller.
  */
@@ -109,16 +105,24 @@ export async function bootDesktopHost(options: DesktopHostOptions = {}): Promise
   const installAnchor = options.installAnchor ?? INSTALL_ANCHOR
   // The frozen environment snapshot, provided before any entry mounts; the
   // layered .env load also materializes unset project/user values.
-  const environment = loadLayeredEnv(NAME, cwd)
-  const profileDir = resolveProfileDir(PROFILE_NAME, home)
-  initProfile(profileDir, PROFILE_BUNDLES)
+  const environment = loadLayeredEnv(NAME, cwd, undefined, home)
   healProfilesModuleFallback(installAnchor, home)
-  const profile = loadProfile(NAME, PROFILE_NAME, INSTALL_ANCHOR, home)
+  // Resolve bundles from the actual installation. In a packaged build this is
+  // resources/app/package.json; in development it is apps/desktop/package.json.
+  // Using the module-relative anchor here would make a caller-provided anchor
+  // (and therefore the packaged dependency closure) ineffective.
+  const profile = loadProfile(NAME, PROFILE_NAME, installAnchor, home)
+  const desktopLayer = loadBundleLayer(NAME, DESKTOP_OVERLAY_BUNDLE, installAnchor, profile.dir)
   const homePatches = loadOptionalPatches(NAME, join(home, PROFILE_PATCH_FILENAME)) ?? []
+  const sharedPatches = [
+    ...profile.layers.flatMap(layer => layer.patches),
+    ...profile.patches,
+    ...homePatches,
+  ]
+  const desktopPatches = desktopLayer.patches
   const composed = composeEntries([
-    ...profile.layers.map(layer => layer.patches),
-    profile.patches,
-    homePatches,
+    sharedPatches,
+    desktopPatches,
   ])
   const rows = new Map<string, PatchOptions>()
   for (const entry of composed) {
@@ -140,12 +144,11 @@ export async function bootDesktopHost(options: DesktopHostOptions = {}): Promise
     })
   }
   const patches: PatchOptions[] = [
-    ...profile.layers.flatMap(layer => layer.patches),
-    ...profile.patches,
-    ...homePatches,
+    ...sharedPatches,
+    ...desktopPatches,
     ...overlays,
   ]
-  const rootConfig = join(profileDir, PROFILE_ROOT_FILENAME)
+  const rootConfig = join(profile.dir, PROFILE_ROOT_FILENAME)
   // The root is always rewritten: the whole composition is patch layers, and
   // the vendored Loader's tree write-back could otherwise bake composed rows
   // into this file (duplicating every bundle insert on the next boot).
@@ -154,7 +157,9 @@ export async function bootDesktopHost(options: DesktopHostOptions = {}): Promise
   const app: { current?: Context } = {}
   const shutdown = createShutdown(async () => { await app.current?.fiber.dispose() })
   installFailLoud(NAME, process, async () => { await app.current?.fiber.dispose() })
-  const ctx = await boot(NAME, rootConfig, patches, (hostCtx) => {
+  // Include applies id-targeted patches in place; keep the source layer graph
+  // pristine so the live watcher can rebuild the exact bundle defaults later.
+  const ctx = await boot(NAME, rootConfig, structuredClone(patches), (hostCtx) => {
     app.current = hostCtx
     // Before any config-tree entry mounts, so plugins resolve all launch-time
     // environment values from the same immutable provenance snapshot.
@@ -163,7 +168,36 @@ export async function bootDesktopHost(options: DesktopHostOptions = {}): Promise
       args: options.args ?? [],
       exit: code => void shutdown.shutdown(code),
     })
-  })
+  }, pathToFileURL(join(profile.dir, 'package.json')).href, (...segments: string[]) => join(home, ...segments))
   app.current = ctx
+
+  // The desktop bundle intentionally disables module HMR, but configuration
+  // patches still have the same live-update contract as `dsh web`. Compose
+  // fresh copies of every layer so removing a user override restores the
+  // bundle value instead of leaving a previous in-memory patch behind.
+  if (ctx.fiber.state === FiberState.ACTIVE && ctx.get('loader') !== undefined) {
+    const composeLive = (): PatchOptions[] => structuredClone([
+      ...profile.layers.flatMap(layer => layer.patches),
+      ...loadOptionalPatches(NAME, profile.patchPath) ?? [],
+      ...loadOptionalPatches(NAME, join(home, PROFILE_PATCH_FILENAME)) ?? [],
+      ...desktopPatches,
+      ...overlays,
+    ])
+    try {
+      await watchUserPatches(ctx, {
+        binName: NAME,
+        filename: profile.patchPath,
+        compose: composeLive,
+      })
+      await watchUserPatches(ctx, {
+        binName: NAME,
+        filename: join(home, PROFILE_PATCH_FILENAME),
+        compose: composeLive,
+      })
+    } catch (error) {
+      await ctx.fiber.dispose()
+      throw error
+    }
+  }
   return { ctx, shutdown }
 }

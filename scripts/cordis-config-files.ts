@@ -13,6 +13,15 @@ import { globSync } from 'node:fs'
 export function cordisConfigFiles(root: string): string[] {
   return globSync(['**/*cordis*.yml', '**/*cordis*.yaml'], {
     cwd: root,
-    exclude: ['.claude/**', 'node_modules/**', 'vendor/**', '**/*.i18n.yaml'],
+    exclude: [
+      '.claude/**',
+      'node_modules/**',
+      'vendor/**',
+      'dist/**',
+      'apps/*/release/**',
+      'apps/*/release-*/**',
+      'apps/*/install-probe-*/**',
+      '**/*.i18n.yaml',
+    ],
   }).sort()
 }

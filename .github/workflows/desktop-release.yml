@@ -1,28 +1,26 @@
-# Desktop shell release: build the Electron app on native runners for every
-# supported desktop OS and CPU architecture, produce installable and portable
-# distribution formats, smoke-test the packaged boot, upload the artifacts,
-# and — on a version tag — publish one verified GitHub Release.
-#
-# The packaged boot smoke runs apps/desktop/scripts/packaged-boot-probe.cjs
-# against each platform's packaged resources/app with a scratch DSH_HOME and
-# requires the boot to settle with the desktop carrier + bridge services —
-# the "clean machine first run" path, including the per-profile module
-# fallback heal. The release job adds SHA-256 checksums beside the installers.
-
-name: Desktop Release
+# Reusable and manual-only native Desktop packaging. A dsh-v* publication calls
+# this workflow from container-release.yml so one tag creates one GitHub Release.
+name: Desktop package matrix
 
 on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version that every Desktop package must carry
+        required: true
+        type: string
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+    inputs:
+      version:
+        description: Optional expected version; defaults to package.json
+        required: false
+        type: string
 
 permissions:
   contents: read
+
+env:
+  NODE_VERSION: '24'
 
 jobs:
   package:
@@ -35,102 +33,118 @@ jobs:
             os: windows-2025
             artifact: dsh-desktop-windows-x64
             builder-args: --win --x64
-            installers: |
+            release-files: |
               apps/desktop/release/*.exe
               apps/desktop/release/*.zip
+              apps/desktop/release/latest*.yml
+              apps/desktop/release/*.blockmap
             app-dir: release/win-unpacked/resources/app
             smoke-cmd: pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
           - name: windows-arm64
             os: windows-11-arm
             artifact: dsh-desktop-windows-arm64
             builder-args: --win --arm64
-            installers: |
+            release-files: |
               apps/desktop/release/*.exe
               apps/desktop/release/*.zip
+              apps/desktop/release/latest*.yml
+              apps/desktop/release/*.blockmap
             app-dir: release/win-arm64-unpacked/resources/app
             smoke-cmd: pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
           - name: macos-x64
             os: macos-15-intel
             artifact: dsh-desktop-macos-x64
             builder-args: --mac --x64
-            installers: |
+            release-files: |
               apps/desktop/release/*.dmg
               apps/desktop/release/*.zip
+              apps/desktop/release/latest*.yml
+              apps/desktop/release/*.blockmap
             app-dir: release/mac/dsh-desktop.app/Contents/Resources/app
             smoke-cmd: pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
           - name: macos-arm64
             os: macos-15
             artifact: dsh-desktop-macos-arm64
             builder-args: --mac --arm64
-            installers: |
+            release-files: |
               apps/desktop/release/*.dmg
               apps/desktop/release/*.zip
+              apps/desktop/release/latest*.yml
+              apps/desktop/release/*.blockmap
             app-dir: release/mac-arm64/dsh-desktop.app/Contents/Resources/app
             smoke-cmd: pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
           - name: linux-x64
             os: ubuntu-24.04
             artifact: dsh-desktop-linux-x64
             builder-args: --linux --x64
-            installers: |
+            release-files: |
               apps/desktop/release/*.AppImage
               apps/desktop/release/*.deb
               apps/desktop/release/*.rpm
               apps/desktop/release/*.tar.gz
+              apps/desktop/release/latest*.yml
+              apps/desktop/release/*.blockmap
             app-dir: release/linux-unpacked/resources/app
             smoke-cmd: xvfb-run -a pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
           - name: linux-arm64
             os: ubuntu-24.04-arm
             artifact: dsh-desktop-linux-arm64
             builder-args: --linux --arm64
-            installers: |
+            release-files: |
               apps/desktop/release/*.AppImage
               apps/desktop/release/*.deb
               apps/desktop/release/*.rpm
               apps/desktop/release/*.tar.gz
+              apps/desktop/release/latest*.yml
+              apps/desktop/release/*.blockmap
             app-dir: release/linux-arm64-unpacked/resources/app
             smoke-cmd: xvfb-run -a pnpm --filter @deepseek-ai/dsh-desktop exec electron scripts/packaged-boot-probe.cjs
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          version: 11.7.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
+
+      - name: Validate package version
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          manifest_version="$(node -p "require('./package.json').version")"
+          if [[ -n "$EXPECTED_VERSION" && "$EXPECTED_VERSION" != "$manifest_version" ]]; then
+            echo "desktop version $manifest_version does not match requested version $EXPECTED_VERSION" >&2
+            exit 1
+          fi
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # The workspace build emits lib/ for every package plus the web frontend
-      # dist; the packaged app embeds both.
       - name: Build workspace
         run: pnpm run build
 
-      # The packaged closure must equal apps/desktop's declared dependencies —
-      # electron-builder collects only those, so the Service Definition peers
-      # must all be declared (sync-pack-deps regenerates the list).
       - name: Check packaged dependency closure
         run: pnpm --filter @deepseek-ai/dsh-desktop run check:pack-deps
 
-      - name: Install xvfb (Linux smoke)
+      - name: Install xvfb
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb
 
-      # Build the desktop shell itself (the workspace build does not cover
-      # apps/ — its tsdown config lives outside the workspace scan), then pack
-      # unsigned installers. electron-builder must never attempt its own
-      # publish: the installers ship via upload-artifact (and, on a version
-      # tag, the release job), and the workflow deliberately has no GH_TOKEN.
       - name: Build desktop shell
         run: pnpm --filter @deepseek-ai/dsh-desktop run build
 
-      - name: Pack installers
+      - name: Pack installers and update metadata
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        # The builder config owns package targets; the matrix owns architecture.
-        # This keeps each artifact and packaged-boot probe architecture-specific.
         run: pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --publish never ${{ matrix.builder-args }}
 
       - name: Smoke packaged boot
@@ -139,38 +153,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: |
-            ${{ matrix.installers }}
+          path: ${{ matrix.release-files }}
           if-no-files-found: error
-          retention-days: 14
-
-  release:
-    name: Publish GitHub Release
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: package
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-
-      - name: Generate SHA-256 checksums
-        working-directory: artifacts
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t files < <(find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | sort)
-          test "${#files[@]}" -gt 0
-          sha256sum -- "${files[@]}" > SHA256SUMS
-          cat SHA256SUMS
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/**
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          make_latest: ${{ !contains(github.ref_name, '-') }}
+          retention-days: 30
+          compression-level: 0

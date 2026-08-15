@@ -49,6 +49,8 @@ const repositoryUrl = 'git+https://github.com/deepseek-harness/deepseek-harness.
 const publishedRepositoryUrl = 'git+https://github.com/deepseek-ai/deepseek-harness.git'
 /** Directories whose packages this repository publishes: one release member each. */
 const releaseMemberDirectory = /^(?:packages\/[^/]+\/[^/]+|apps\/[^/]+|vendor\/[^/]+)$/
+/** Versioned with the dsh family but distributed only as native installers. */
+const privateDesktopApp = '@deepseek-ai/dsh-desktop'
 
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
@@ -135,6 +137,7 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-base': ['cordis.patch.yml'],
   '@deepseek-ai/dsh-web-app': ['cordis.patch.yml'],
   '@deepseek-ai/dsh-headless': ['cordis.patch.yml'],
+  '@deepseek-ai/dsh-desktop-app': ['cordis.patch.yml'],
   // The Host and desktop connection entries share generated runtime chunks.
   '@deepseek-ai/dsh-client-connection': ['lib/desktop.js', 'lib/*-*.js'],
   '@deepseek-ai/dsh-client-ui-theme': ['lib/styles'],
@@ -228,6 +231,7 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
   const isPublicLandlockPackage = isLandlockPackageDir
     && manifest.name !== undefined
     && publicLandlockPackages.has(manifest.name)
+  const isPrivateDesktopApp = manifest.name === privateDesktopApp && dir === 'apps/desktop'
 
   if (isPublicLandlockPackage) {
     if (manifest.private === true) {
@@ -242,7 +246,7 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
       || manifest.repository.directory !== expectedDirectory) {
       errors.push(`${label}: published Landlock package repository must use ${repositoryUrl} with directory ${expectedDirectory} for trusted publishing`)
     }
-  } else if (releaseMemberDirectory.test(dir)) {
+  } else if (releaseMemberDirectory.test(dir) && !isPrivateDesktopApp) {
     // Release members state that they are publishable: npm refuses a private
     // package, and the repository field is how a consumer finds the source of
     // the package it installed.
@@ -281,7 +285,7 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
     }
   }
 
-  if (dir.startsWith('apps/') && manifest.name?.startsWith('@deepseek-ai/')) {
+  if (dir.startsWith('apps/') && manifest.name?.startsWith('@deepseek-ai/') && !isPrivateDesktopApp) {
     const expectedFiles = appPackageFiles[manifest.name]
     if (expectedFiles === undefined) {
       errors.push(`${label}: app package has no publication files policy`)

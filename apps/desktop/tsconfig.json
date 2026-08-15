@@ -12,6 +12,9 @@
       "path": "../../vendor/cordis"
     },
     {
+      "path": "../../vendor/schemastery"
+    },
+    {
       "path": "../../packages/boot/app-boot"
     },
     {
@@ -25,6 +28,12 @@
     },
     {
       "path": "../../packages/host/desktop-carrier"
+    },
+    {
+      "path": "../../packages/settings/settings"
+    },
+    {
+      "path": "../../packages/session-query/session-query"
     }
   ]
 }

@@ -41,6 +41,7 @@
   "dependencies": {
     "@deepseek-ai/dsh-app-boot": "workspace:^",
     "@deepseek-ai/dsh-client-connection": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-updater": "workspace:^",
     "@deepseek-ai/dsh-client-ui-window-controls": "workspace:^",
     "@deepseek-ai/dsh-host-desktop-carrier": "workspace:^"
   },

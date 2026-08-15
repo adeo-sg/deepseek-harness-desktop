@@ -9,7 +9,7 @@ import { defineConfig } from 'tsdown'
 export default defineConfig([
   {
     name: 'dsh-desktop',
-    entry: 'lib/types/{main,host,ipc,protocol,shutdown,bridge-types}.js',
+    entry: 'lib/types/{main,host,ipc,protocol,shutdown,tray,bridge-types,update,desktop-settings}.js',
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',

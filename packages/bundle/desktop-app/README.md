@@ -6,7 +6,7 @@ The dsh desktop-surface bundle: the Electron patch layer over `dsh-base` + `dsh-
 
 The runtime glue registers the harness-source prompt section (shared with the web runtime) and the `app:desktop-surface` section that orients sessions running inside the desktop shell — the web bundle's URL-based surface text is disabled because the shell has no server URL.
 
-The desktop profile is `base + web-app + desktop-app`; the `apps/desktop` shell boots it through `dsh-app-boot` with zero network ports.
+The `apps/desktop` shell loads the canonical `web` profile through `dsh-app-boot`, including its ordered bundles, profile-installed plugins, and `profiles/web/cordis.patch.yml`, then applies the home patch and the installation-owned `desktop-app` bundle as an in-memory transport overlay. The overlay is absent from the Web profile manifest, so `npx @deepseek-ai/dsh web` and Electron share one user composition while the Web launcher never receives desktop-only rows. A source-only composition parity test requires every Web row to remain present and unchanged except `webserver`, `web-runtime`, `client-hmr`, and `connection`, and fixes the complete desktop-only row set to `desktop-carrier`, `desktop-connection`, `desktop-app`, `window-controls`, and `update-banner`. The packaged-boot probe fetches every client bundle advertised by the installed `clientModules` graph, so a dependency omitted from the Electron package fails the release smoke.
 
 ## Model Experience
 

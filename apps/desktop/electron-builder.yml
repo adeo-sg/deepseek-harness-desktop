@@ -14,6 +14,19 @@ copyright: Copyright (c) 2026 DeepSeek AI
 # paths"). Pin a plain name so every platform's binary and installer are stable.
 executableName: dsh-desktop
 artifactName: 'DeepSeek-Harness-${version}-${os}-${arch}.${ext}'
+# Update source for the desktop shell's auto-updater (apps/desktop/src/update.ts):
+# electron-updater reads the GitHub Releases provider embedded in
+# resources/app-update.yml and resolves updates from this repo's releases. The
+# provider is spelled out because the package.json `repository` field points at
+# the upstream harness repo, not this repo's git remote. Packing with this
+# section configured writes latest.yml / latest-mac.yml / latest-linux.yml
+# beside the installers; uploads stay manual (the release workflow has no
+# GH_TOKEN by design), so the release job carries the metadata files to the
+# GitHub Release alongside the installers.
+publish:
+  provider: github
+  owner: sdkwork-ai
+  repo: deepseek-harness-desktop
 directories:
   output: release
   buildResources: build
@@ -47,8 +60,9 @@ nsis:
   allowToChangeInstallationDirectory: true
   perMachine: false
   # Direct ZIP extraction avoids the temporary-directory copy used by the
-  # differential 7z payload. This app does not ship an electron-updater
-  # consumer, so installer speed is the useful trade-off for its first install.
+  # differential 7z payload. The updater consumes the full installer (the
+  # differential payload is a download-size optimization deferred with the
+  # signed-update milestone); installer speed remains the useful trade-off.
   differentialPackage: false
   useZip: true
 mac:

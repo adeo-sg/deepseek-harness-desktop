@@ -6,7 +6,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import type { DesktopBridgeHost } from '../src/bridge-types.ts'
+import type { DesktopBridgeHost, DesktopUpdateState } from '../src/bridge-types.ts'
 import { IPC_CHANNELS } from '../src/bridge-types.ts'
 
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
@@ -26,7 +26,8 @@ vi.mock('electron', () => ({
   },
 }))
 
-import { registerIpc, registerWindowIpc } from '../src/ipc.ts'
+import { registerIpc, registerUpdateIpc, registerWindowIpc } from '../src/ipc.ts'
+import type { DesktopUpdater } from '../src/update.ts'
 
 function bridgeWith(fetch: (request: Request) => Promise<Response>): DesktopBridgeHost {
   return {
@@ -185,5 +186,58 @@ describe('registerWindowIpc', () => {
     expect(() => action?.({ sender: {} }, 'close')).not.toThrow()
     const state = handlers.get(IPC_CHANNELS.windowState) as (event: unknown) => unknown
     expect(await state({ sender: {} })).toEqual({ maximized: false })
+  })
+})
+
+describe('registerUpdateIpc', () => {
+  /** A fake updater surface; the mock members come back as locals for assertions. */
+  function updaterWith(): {
+    updater: DesktopUpdater
+    getState: Mock<() => DesktopUpdateState>
+    checkNow: Mock<() => Promise<void>>
+    download: Mock<() => Promise<void>>
+    install: Mock<() => void>
+    openReleasePage: Mock<() => void>
+    dispose: Mock<() => void>
+  } {
+    const getState = vi.fn((): DesktopUpdateState => ({ phase: 'idle', canInstall: true }))
+    const checkNow = vi.fn(async () => {})
+    const download = vi.fn(async () => {})
+    const install = vi.fn()
+    const openReleasePage = vi.fn()
+    const dispose = vi.fn()
+    const updater: DesktopUpdater = { getState, checkNow, download, install, openReleasePage, dispose }
+    return { updater, getState, checkNow, download, install, openReleasePage, dispose }
+  }
+
+  beforeEach(() => {
+    handlers.clear()
+    listeners.clear()
+  })
+
+  it('answers the state poll from the updater', async () => {
+    const { updater, getState } = updaterWith()
+    registerUpdateIpc(updater)
+    const state = handlers.get(IPC_CHANNELS.updateGetState) as (event: unknown) => unknown
+    expect(await state({})).toEqual({ phase: 'idle', canInstall: true })
+    expect(getState).toHaveBeenCalledTimes(1)
+  })
+
+  it('routes the one-shot actions to the updater and ignores unknown actions', () => {
+    const { updater, checkNow, download, install, openReleasePage } = updaterWith()
+    registerUpdateIpc(updater)
+    const action = listeners.get(IPC_CHANNELS.updateAction)?.[0]
+    expect(action).toBeDefined()
+    action?.({}, 'check')
+    action?.({}, 'download')
+    action?.({}, 'install')
+    action?.({}, 'open-release-page')
+    expect(checkNow).toHaveBeenCalledTimes(1)
+    expect(download).toHaveBeenCalledTimes(1)
+    expect(install).toHaveBeenCalledTimes(1)
+    expect(openReleasePage).toHaveBeenCalledTimes(1)
+    action?.({}, 'restart')
+    action?.({}, 42)
+    expect(install).toHaveBeenCalledTimes(1)
   })
 })
