@@ -9,4 +9,4 @@ resources:
 
 images:
   - name: ghcr.io/sdkwork-ai/deepseek-harness
-    newTag: 0.1.0-rc.8
+    newTag: 0.1.0-rc.9
