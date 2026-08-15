@@ -14,7 +14,7 @@ Web profile 需要可复现的 Docker 与 Kubernetes 发行方式，但工作区
 
 容器部署监听 `4080`，而 npx 和本地 Web 运行器仍使用 `127.0.0.1:3080`。容器入口不经过 shell，而是将环境配置转换为 argv，并要求与 CLI 相同的显式非回环选择。
 
-[容器发布工作流](../../../../.github/workflows/container-release.yml)会在标签和手动运行时启动 amd64 镜像并执行健康检查，但只有 `dsh-v<版本>` 标签可以向 GHCR 发布 amd64 与 arm64 镜像或创建 GitHub Release。随后它会要求 GHCR 包为 `public` 并验证匿名拉取；GitHub Packages API 不提供可见性更新，因此包可见性是由管理员负责的发布前提。[部署打包器](../../../../scripts/release/pack-container.ts)会复制部署资产，从打包后的 Compose 文件中移除只用于源码的 `build` 部分，将 Compose 和 Kubernetes 固定到执行发布的镜像仓库与版本，记录逐文件哈希，并为归档生成 SHA-256 校验和。标签对应的 GitHub Release 会长期保留归档及其校验文件；Actions artifact 还会将完整输出保留 30 天。
+[容器发布工作流](../../../../.github/workflows/container-release.yml)只构建一次 amd64 镜像，保存该镜像，重新加载已保存的字节，并对恢复后的镜像执行健康检查。`dsh-v<version>` 标签会将镜像归档、部署归档及各自的 SHA-256 文件附加到 GitHub Release；手动运行会将相同文件保留为 30 天的 Actions artifact。根据[以 GitHub Release 资产发布容器镜像](2026-08-15-container-images-as-github-release-assets.md)的决策，工作流不持有镜像 registry 凭据，也不写入 registry。[部署打包器](../../../../scripts/release/pack-container.ts)会复制 Compose、Kubernetes 和指南资产，从打包后的 Compose 文件中移除只用于源码的 `build` 部分，将 Compose 和 Kubernetes 固定到保存镜像的本地名称与版本，记录逐文件哈希，并为归档生成 SHA-256 校验和。
 
 Compose 默认只在 `127.0.0.1` 发布直接监听地址。Kubernetes Deployment 不挂载 ServiceAccount token，其可选 NGINX Ingress 示例同时要求 TLS 和身份验证 Secret。这些默认值会让未经身份验证的 Web API 远离不可信网络，同时仍允许显式配置的具备身份验证的反向代理访问它。
 
@@ -24,8 +24,8 @@ Compose 默认只在 `127.0.0.1` 发布直接监听地址。Kubernetes Deploymen
 
 **将构建后的 monorepo 复制到运行时镜像。** 不予采纳，因为这种方式会混合源码工作区布局与安装后的发行布局，保留仅开发时使用的文件和依赖，也不会验证发布流程实际发布的 npm 包集合。
 
-**原样打包用于源码构建的 Compose 文件。** 不予采纳，因为其构建上下文需要部署归档没有携带的仓库源码。发布归档改为拉取固定镜像，并仍可通过 `DSH_IMAGE` 或 Kustomize 镜像覆盖进行替换。
+**原样打包用于源码构建的 Compose 文件。** 不予采纳，因为其构建上下文需要部署归档没有携带的仓库源码。发布归档改为引用从同级归档恢复的版本化镜像，并仍可通过 `DSH_IMAGE` 或 Kustomize 镜像覆盖进行替换。
 
 ## 后果
 
-镜像构建会执行完整工作区构建和包安装，包括一个公开的平台包，因此成本高于复制现有工作区输出。相应地，运行时布局与 npm 发布产物一致，两个 Linux 沙箱后端都存在，部署归档无需仓库源码即可运行，并且本地端口和容器端口能够并存。静态校验会固定构建顺序、环回端口映射、Kubernetes 身份与网络策略、探针以及需要身份验证的 Ingress 示例，发布工作流则负责 Linux 上真实的 Docker 构建和健康冒烟测试。
+镜像构建会执行完整工作区构建和包安装，包括一个公开的平台包，因此成本高于复制现有工作区输出。相应地，运行时布局与 npm 发布产物一致，两个 Linux 沙箱后端都存在，部署归档无需仓库源码即可运行，并且本地端口和容器端口能够并存。静态校验会固定构建顺序、环回端口映射、Kubernetes 身份与网络策略、探针以及需要身份验证的 Ingress 示例，发布工作流则负责 Linux 上真实的 Docker 构建、归档重载和健康冒烟测试。

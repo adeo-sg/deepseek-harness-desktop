@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ${DSH_IMAGE:-ghcr.io/sdkwork-ai/deepseek-harness:local}
+    image: ${DSH_IMAGE:-localhost/deepseek-harness:local}
     restart: unless-stopped
     ports:
       # Keep the unauthenticated direct listener on loopback. A reverse proxy

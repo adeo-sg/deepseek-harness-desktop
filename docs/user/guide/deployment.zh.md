@@ -17,7 +17,7 @@ Web 服务器默认绑定 `127.0.0.1:3080`。对外网络部署必须设置 `DSH
 请在仓库根目录构建。多阶段镜像会编译并打包工作区，将发布校验使用的同一组 npm tarball 安装到普通 npm 消费方中，校验已安装的 CLI 和当前架构对应的 Landlock 启动器，安装 bubblewrap 以及 `dsh plugin` 使用的固定 pnpm 版本，并以 UID 10001 运行。包管理器的数据和缓存位于可写的 `/data` 卷下。
 
 ```sh
-docker build -t ghcr.io/sdkwork-ai/deepseek-harness:local .
+docker build -t localhost/deepseek-harness:local .
 ```
 
 ### 使用 Compose 运行
@@ -28,12 +28,14 @@ docker build -t ghcr.io/sdkwork-ai/deepseek-harness:local .
 DEEPSEEK_API_KEY=your-key DSH_TRUSTED_HOSTS=localhost,127.0.0.1 docker compose up -d --build
 ```
 
-上述命令从源码 checkout 构建。`dsh-container-<version>.tar.gz` 发布包包含仅用于部署的 Compose 文件：其中已移除构建部分，并将默认镜像固定为生成该发布包的仓库和版本。解压后可直接拉取并运行镜像；也可通过 `DSH_IMAGE` 覆盖该固定值。
+上述命令从源码 checkout 构建。GitHub Release 会提供保存的 `linux/amd64` 镜像、部署包，以及两个归档各自的 SHA-256 文件。将四个资产下载到同一目录，校验并加载镜像，再解压并启动部署包。打包后的 Compose 文件不包含只用于源码的构建部分，并使用 `docker load` 恢复的镜像标签；可通过 `DSH_IMAGE` 覆盖该标签。
 
 ```sh
+sha256sum -c dsh-container-image-<version>-linux-amd64.tar.gz.sha256
+sha256sum -c dsh-container-<version>.tar.gz.sha256
+gzip -dc dsh-container-image-<version>-linux-amd64.tar.gz | docker load
 tar -xzf dsh-container-<version>.tar.gz
 cd dsh-container-<version>
-docker compose pull
 DEEPSEEK_API_KEY=your-key docker compose up -d
 ```
 
@@ -41,7 +43,9 @@ DEEPSEEK_API_KEY=your-key docker compose up -d
 
 ## Kubernetes
 
-清单会创建一个副本、两个 `ReadWriteOnce` PVC、一个 ClusterIP Service、一个 NetworkPolicy，以及 HTTP 启动、就绪和存活探针。应用 Kustomization 之前先创建 API key Secret。
+清单会创建一个副本、两个 `ReadWriteOnce` PVC、一个 ClusterIP Service、一个 NetworkPolicy，以及 HTTP 启动、就绪和存活探针。签入的清单使用 `localhost/deepseek-harness:local`；发布包使用同级镜像归档恢复的版本标签。应用 Kustomization 前，请将该镜像准确加载到每个目标节点。对于本地集群，`kind load docker-image localhost/deepseek-harness:<version>` 或 `minikube image load localhost/deepseek-harness:<version>` 可导入已加载到 Docker 的镜像。
+
+应用 Kustomization 之前先创建 API key Secret。
 
 ```sh
 kubectl create secret generic dsh-credentials \
@@ -51,6 +55,16 @@ kubectl port-forward svc/dsh 4080:4080
 ```
 
 端口转发就绪后打开 `http://127.0.0.1:4080`。端口转发使用 `4080`；npx/本地运行器仍使用 `3080`。
+
+如果集群不能接收预加载镜像，请将已加载的镜像推送到你控制的 registry，并从解压后部署包的根目录替换本地镜像名，再应用清单。
+
+```sh
+docker tag localhost/deepseek-harness:<version> registry.example.com/deepseek-harness:<version>
+docker push registry.example.com/deepseek-harness:<version>
+cd deploy/kubernetes
+kustomize edit set image localhost/deepseek-harness=registry.example.com/deepseek-harness:<version>
+kubectl apply -k .
+```
 
 如果需要外部 URL，请编辑 `deploy/kubernetes/configmap.yaml`，让 `DSH_TRUSTED_HOSTS` 包含 Ingress 的精确 authority。可选的 NGINX `ingress.example.yaml` 需要 `dsh-basic-auth` Secret，其中 `auth` 键包含 htpasswd 文件；它还需要 `dsh-tls` TLS Secret。请先创建二者，再应用该示例并重启 Deployment。其他 Ingress controller 必须提供等效的身份验证和 TLS。Ingress 必须保留 `/api` 下行连接所需的 WebSocket upgrade。
 
@@ -68,9 +82,9 @@ Web 载体没有内置 TLS 或认证。对可信网络之外开放前，请使�
 
 探针使用 `GET /`，因为 Web 服务器没有无需认证的健康 endpoint。非 200 响应表示前端或 profile 尚未挂载；请先检查 `docker compose logs` 或 `kubectl logs`，再调整探针时间。
 
-## 发布镜像
+## 发布资产
 
-容器工作流只会从 `dsh-v<version>` 标签发布 `ghcr.io/<repository-owner>/deepseek-harness:<version>` 和不可变的 commit 标签。手动运行工作流只会构建镜像、执行健康检查并保留部署输出，不会写入 registry 标签。对应的 GitHub Release 会长期保留 `dsh-container-<version>.tar.gz` 及其 `.sha256` 文件作为部署包；工作流还会将完整输出作为保留 30 天的 Actions artifact 保存。GHCR 首次推送时可能将包创建为 `private`；组织或包管理员必须在 GitHub 包设置中将 `deepseek-harness` 设为 `public`。工作流会校验该设置并执行匿名拉取；镜像不是 `public` 时会报告所需修正并失败。现有 npm 发布工作流独立运行；`pnpm run release:pack` 不包含 Docker 镜像。生产环境请固定已发布的镜像标签或 digest，并在应用版本变更时一并更新 Kustomize 镜像覆盖值。
+`dsh-v<version>` 标签会构建一个 `linux/amd64` 镜像，将其保存为 `dsh-container-image-<version>-linux-amd64.tar.gz`，重新加载该归档，并对恢复后的镜像执行健康检查。对应的 GitHub Release 会保留该镜像、`dsh-container-<version>.tar.gz` 部署包以及两个 SHA-256 文件。工作流不会登录或发布到镜像 registry。手动运行会执行相同构建，并将四个文件保留为 30 天的 Actions artifact，而不创建 Release。npm 发布工作流保持独立；`pnpm run release:pack` 不包含 Docker 镜像。请在其他架构上从源码构建，或将特定架构的镜像发布到你控制的 registry。生产环境请固定该 registry 标签或 digest，并随应用版本更新 Kustomize 镜像覆盖值。
 
 ## 排错
 

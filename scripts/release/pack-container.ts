@@ -9,7 +9,7 @@ import { parseArgs } from 'node:util'
 import yaml from 'js-yaml'
 
 const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)))
-const ASSETS = ['.dockerignore', 'Dockerfile', 'docker-compose.yml', 'deploy', 'docs/user/guide/deployment.md', 'docs/user/guide/deployment.zh.md', 'docs/user/guide/deployment.i18n.yaml']
+const ASSETS = ['docker-compose.yml', 'deploy/kubernetes', 'docs/user/guide/deployment.md', 'docs/user/guide/deployment.zh.md', 'docs/user/guide/deployment.i18n.yaml']
 
 function objectValue(value: unknown, path: string): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error(`pack container: ${path} is not an object`)
@@ -106,7 +106,8 @@ function main(): void {
 
   const releaseImage = prepareReleaseAssets(staging, releaseVersion, values['image-repository'])
   const releaseFiles = filesUnder(staging)
-  if (!releaseFiles.includes('.dockerignore')) throw new Error('pack container: staged release is missing .dockerignore')
+  if (!releaseFiles.includes('docker-compose.yml')) throw new Error('pack container: staged release is missing docker-compose.yml')
+  if (!releaseFiles.includes('deploy/kubernetes/deployment.yaml')) throw new Error('pack container: staged release is missing the Kubernetes Deployment')
   const hashes = releaseFiles.map((path) => {
     const digest = createHash('sha256').update(readFileSync(join(staging, path))).digest('hex')
     return { path, sha256: digest }

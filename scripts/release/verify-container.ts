@@ -36,13 +36,6 @@ function readDocument(path: string): Record<string, unknown> {
   return document
 }
 
-function readVersion(): string {
-  const manifest = objectValue(JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')), 'package.json')
-  const version = manifest.version
-  if (typeof version !== 'string' || version === '') fail('package.json has no version')
-  return version
-}
-
 function scalarArray(value: unknown, path: string): unknown[] {
   assert(Array.isArray(value), `${path} is not an array`)
   return value
@@ -85,8 +78,6 @@ function main(): void {
   const config = readDocument(join(ROOT, 'deploy/kubernetes/configmap.yaml'))
   const networkPolicy = readDocument(join(ROOT, 'deploy/kubernetes/network-policy.yaml'))
   const ingressExample = readDocument(join(ROOT, 'deploy/kubernetes/ingress.example.yaml'))
-  const version = readVersion()
-
   for (const path of ['.dockerignore', '.github/workflows/container-release.yml', 'Dockerfile', 'docker-compose.yml', 'deploy/docker-entrypoint.mjs', 'deploy/kubernetes/kustomization.yaml', 'deploy/kubernetes/configmap.yaml', 'deploy/kubernetes/pvc.yaml', 'deploy/kubernetes/deployment.yaml', 'deploy/kubernetes/service.yaml', 'deploy/kubernetes/network-policy.yaml', 'deploy/kubernetes/secret.example.yaml', 'deploy/kubernetes/ingress.example.yaml']) {
     assert(existsSync(join(ROOT, path)), `missing ${path}`)
   }
@@ -120,21 +111,38 @@ function main(): void {
   assert(entrypoint.includes('host !== \'0.0.0.0\' && allowNonLoopback'), 'entrypoint must reject a non-loopback opt-in for another host')
   assert(entrypoint.includes('/opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'), 'entrypoint must start the packed npm consumer CLI')
   assert(releaseWorkflowDocument.name === 'Release (container)', 'release workflow must have the expected name')
-  const qemuIndex = releaseWorkflow.indexOf('docker/setup-qemu-action@v3')
-  const buildxIndex = releaseWorkflow.indexOf('docker/setup-buildx-action@v3')
-  assert(qemuIndex !== -1 && qemuIndex < buildxIndex, 'release workflow must register QEMU before the multi-platform Buildx builder')
-  assert(releaseWorkflow.includes('pnpm run release:pack-container --out dist/container --image-repository "ghcr.io/${GITHUB_REPOSITORY_OWNER}/deepseek-harness"'), 'release workflow must package manifests for the image repository it publishes')
-  assert(releaseWorkflow.includes('docker run --detach --name'), 'release workflow must start the built image before publishing it')
-  assert(releaseWorkflow.includes('--jq \'.visibility\''), 'release workflow must require a public GHCR package')
-  assert(releaseWorkflow.includes('docker logout ghcr.io') && releaseWorkflow.includes('docker pull "ghcr.io/${GITHUB_REPOSITORY_OWNER}/deepseek-harness:'), 'release workflow must prove an anonymous image pull')
-  assert(releaseWorkflow.includes('if: startsWith(github.ref, \'refs/tags/dsh-v\')'), 'release workflow must attach bundles only for dsh version tags')
-  assert((releaseWorkflow.match(/if: startsWith\(github\.ref, 'refs\/tags\/dsh-v'\)/g) ?? []).length >= 5, 'release workflow must gate registry writes, digest recording, and release attachment on dsh version tags')
+  const workflowPermissions = objectValue(releaseWorkflowDocument.permissions, 'release workflow permissions')
+  assert(workflowPermissions.contents === 'read', 'release workflow must default to read-only repository access')
+  const workflowJobs = objectValue(releaseWorkflowDocument.jobs, 'release workflow jobs')
+  const packageJob = objectValue(workflowJobs.package, 'release workflow package job')
+  assert(packageJob.permissions === undefined, 'package job must not override the read-only workflow permissions')
+  const releaseJob = objectValue(workflowJobs.release, 'release workflow release job')
+  const releasePermissions = objectValue(releaseJob.permissions, 'release workflow release permissions')
+  assert(releaseJob.needs === 'package' && releasePermissions.contents === 'write', 'only the release job may receive repository write access')
+  assert((releaseWorkflow.match(/contents: write/g) ?? []).length === 1, 'release workflow must grant repository write access exactly once')
+  assert(releaseWorkflow.includes('docker/setup-buildx-action@v3'), 'release workflow must configure Buildx')
+  assert(!releaseWorkflow.includes('docker/setup-qemu-action'), 'release workflow must not emulate another architecture')
+  assert(releaseWorkflow.includes('pnpm run release:pack-container --out dist/container --image-repository localhost/deepseek-harness'), 'release workflow must package manifests for the saved local image')
+  assert(releaseWorkflow.includes('load: true') && releaseWorkflow.includes('platforms: linux/amd64'), 'release workflow must load one amd64 image for packaging')
+  assert(!releaseWorkflow.includes('linux/arm64') && !releaseWorkflow.includes('push: true'), 'release workflow must not run a multi-platform registry push')
+  assert(!releaseWorkflow.includes('packages: write') && !releaseWorkflow.includes('ghcr.io'), 'release workflow must not request or use registry publishing access')
+  const saveIndex = releaseWorkflow.indexOf('docker save "localhost/deepseek-harness:')
+  const removeIndex = releaseWorkflow.indexOf('docker image rm "localhost/deepseek-harness:')
+  const loadIndex = releaseWorkflow.indexOf('| docker load')
+  const workflowSmokeIndex = releaseWorkflow.indexOf('docker run --detach --name')
+  assert(saveIndex !== -1 && saveIndex < removeIndex && removeIndex < loadIndex && loadIndex < workflowSmokeIndex, 'release workflow must health-check the image reloaded from the release archive')
+  assert(releaseWorkflow.includes('dsh-container-image-${{ steps.version.outputs.version }}-linux-amd64.tar.gz'), 'release workflow must name the image archive by version and platform')
+  assert(releaseWorkflow.includes('sha256sum --check'), 'release workflow must verify the image archive checksum before the smoke test')
+  assert(releaseWorkflow.includes("if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/dsh-v')"), 'release workflow must attach bundles only for pushed dsh version tags')
+  assert(releaseWorkflow.includes('actions/upload-artifact@v4') && releaseWorkflow.includes('compression-level: 0'), 'release workflow must retain the pre-compressed assets without recompressing them')
+  assert(releaseWorkflow.includes('actions/download-artifact@v4'), 'release job must consume the read-only package job output')
   assert(releaseWorkflow.includes('softprops/action-gh-release@v2'), 'release workflow must retain tagged deployment bundles on GitHub Releases')
-  assert(releaseWorkflow.includes('artifacts/*.tar.gz') && releaseWorkflow.includes('artifacts/*.tar.gz.sha256'), 'GitHub Releases must carry the deployment archive and its SHA-256 checksum')
+  assert(releaseWorkflow.includes('dist/container/*.tar.gz') && releaseWorkflow.includes('dist/container/*.tar.gz.sha256'), 'Actions artifacts must carry the image and deployment archives with their SHA-256 checksums')
+  assert(releaseWorkflow.includes('artifacts/*.tar.gz') && releaseWorkflow.includes('artifacts/*.tar.gz.sha256'), 'GitHub Releases must carry the image and deployment archives with their SHA-256 checksums')
 
   const dsh = objectValue(compose.services, 'docker-compose.services').dsh
   const composeService = objectValue(dsh, 'docker-compose.services.dsh')
-  assert(composeService.image === '${DSH_IMAGE:-ghcr.io/sdkwork-ai/deepseek-harness:local}', 'Compose image must match the current GHCR repository')
+  assert(composeService.image === '${DSH_IMAGE:-localhost/deepseek-harness:local}', 'Compose must use the local source-build image by default')
   const ports = scalarArray(composeService.ports, 'docker-compose.services.dsh.ports')
   assert(ports.length === 1 && ports[0] === '${DSH_PUBLISH_HOST:-127.0.0.1}:${DSH_PUBLISH_PORT:-4080}:4080', 'Compose must publish 4080 on loopback by default')
   const composeEnvironment = objectValue(composeService.environment, 'docker-compose.services.dsh.environment')
@@ -148,7 +156,7 @@ function main(): void {
   const containers = podSpec.containers
   assert(Array.isArray(containers) && containers.length === 1, 'Deployment must define one container')
   const container = objectValue(containers[0], 'deployment.container')
-  assert(container.image === `ghcr.io/sdkwork-ai/deepseek-harness:${version}`, 'Deployment image tag must match package.json')
+  assert(container.image === 'localhost/deepseek-harness:local', 'Deployment must use the local source-build image by default')
   const containerPort = onlyObject(container.ports, 'deployment.container.ports')
   assert(containerPort.name === 'http' && containerPort.protocol === 'TCP' && containerPort.containerPort === 4080, 'Deployment must expose exactly http/TCP/4080')
   assert(objectValue(container.securityContext, 'deployment.container.securityContext').readOnlyRootFilesystem === true, 'Deployment root filesystem must be read-only')
@@ -169,8 +177,8 @@ function main(): void {
   const images = kustomization.images
   assert(Array.isArray(images) && images.some((value) => {
     const image = objectValue(value, 'kustomization.image')
-    return image.name === 'ghcr.io/sdkwork-ai/deepseek-harness' && image.newTag === version
-  }), 'Kustomization image override must match the current GHCR repository and package.json')
+    return image.name === 'localhost/deepseek-harness' && image.newTag === 'local'
+  }), 'Kustomization image override must preserve the local source-build image')
   const resources = scalarArray(kustomization.resources, 'kustomization.resources')
   assert(resources.includes('network-policy.yaml'), 'Kustomization must include network-policy.yaml')
 
@@ -191,7 +199,7 @@ function main(): void {
 
   expectEntrypointUsageError({ DSH_WEB_HOST: '0.0.0.0', DSH_ALLOW_NON_LOOPBACK: '0' }, 'DSH_ALLOW_NON_LOOPBACK must be true')
   expectEntrypointUsageError({ DSH_WEB_HOST: '127.0.0.1', DSH_ALLOW_NON_LOOPBACK: '1' }, 'DSH_ALLOW_NON_LOOPBACK is valid only')
-  console.log(`container verify: Docker, Compose, and Kubernetes assets are valid for ${version}`)
+  console.log('container verify: Docker, Compose, Kubernetes, and release assets are valid')
 }
 
 main()
