@@ -105,7 +105,7 @@ Web 载体没有内置 TLS 或认证。对可信网络之外开放前，请使�
 
 ## 发布资产
 
-`dsh-v<version>` 标签会将一个 `linux/amd64` 镜像直接构建为 `dsh-container-image-<version>-linux-amd64.tar.gz`，并加载该归档进行验证。工作流会校验并解压 `dsh-container-<version>.tar.gz`，验证其内部文件 manifest，再使用解压后的 Compose 文件及其只读根、`noexec` 临时挂载和命名卷启动服务；它要求 HTTP 响应，并验证容器重启后的 `/data`。对应的 GitHub Release 会保留该镜像、部署包以及两个 SHA-256 文件。工作流不使用镜像发布 action，不登录镜像 registry，也不推送 registry 标签。手动运行会执行相同构建，并将四个文件保留为 30 天的 Actions artifact，而不创建 Release。npm 发布工作流保持独立；`pnpm run release:pack` 不包含 Docker 镜像。请在其他架构上从源码构建，或将特定架构的镜像发布到你控制的 registry。生产环境请固定该 registry 标签或 digest，并随应用版本更新 Kustomize 镜像覆盖值。
+`dsh-v<version>` 标签会将一个 `linux/amd64` 镜像直接构建为 `dsh-container-image-<version>-linux-amd64.tar.gz`，并加载该归档进行验证。工作流会校验并解压 `dsh-container-<version>.tar.gz`，验证其内部文件 manifest，再使用解压后的 Compose 文件及其只读根、`noexec` 临时挂载和命名卷启动服务；它要求 HTTP 响应，并验证容器重建后两个命名卷的数据。对应的 GitHub Release 会保留该镜像、部署包以及两个 SHA-256 文件。工作流不使用镜像发布 action，不登录镜像 registry，也不推送 registry 标签。手动运行会执行相同构建，并将四个文件保留为 30 天的 Actions artifact，而不创建 Release。npm 发布工作流保持独立；`pnpm run release:pack` 不包含 Docker 镜像。请在其他架构上从源码构建，或将特定架构的镜像发布到你控制的 registry。生产环境请固定该 registry 标签或 digest，并随应用版本更新 Kustomize 镜像覆盖值。
 
 ## 排错
 
