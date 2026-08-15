@@ -4,6 +4,43 @@ English | [中文](deployment.zh.md)
 
 This guide deploys the Web profile in Docker or Kubernetes. The npx/local runner keeps its default `http://127.0.0.1:3080`; container deployments use port `4080`, so both modes can run on one machine without a port collision.
 
+## Ubuntu 22.04 and WSL 2 prerequisites
+
+The commands below require Docker Engine with the Compose plugin, `kubectl`, and Minikube on an `amd64` or `arm64` host. Install Docker through the [Ubuntu Docker Engine guide](https://docs.docker.com/engine/install/ubuntu/) or enable Docker Desktop's WSL integration, then install the Kubernetes clients and verify every command before cloning the repository.
+
+```sh
+case "$(uname -m)" in
+  x86_64|amd64) arch=amd64 ;;
+  aarch64|arm64) arch=arm64 ;;
+  *) echo 'unsupported container architecture' >&2; exit 1 ;;
+esac
+tools_dir="$(mktemp -d)"
+kubectl_version="$(curl --fail --show-error --silent --location https://dl.k8s.io/release/stable.txt)"
+curl --fail --show-error --location \
+  "https://dl.k8s.io/release/${kubectl_version}/bin/linux/${arch}/kubectl" \
+  --output "${tools_dir}/kubectl"
+curl --fail --show-error --location \
+  "https://dl.k8s.io/release/${kubectl_version}/bin/linux/${arch}/kubectl.sha256" \
+  --output "${tools_dir}/kubectl.sha256"
+curl --fail --show-error --location \
+  "https://storage.googleapis.com/minikube/releases/latest/minikube-linux-${arch}" \
+  --output "${tools_dir}/minikube"
+curl --fail --show-error --location \
+  "https://storage.googleapis.com/minikube/releases/latest/minikube-linux-${arch}.sha256" \
+  --output "${tools_dir}/minikube.sha256"
+(cd "${tools_dir}" && printf '%s  kubectl\n' "$(cat kubectl.sha256)" | sha256sum --check)
+(cd "${tools_dir}" && printf '%s  minikube\n' "$(cat minikube.sha256)" | sha256sum --check)
+sudo install -m 0755 "${tools_dir}/kubectl" /usr/local/bin/kubectl
+sudo install -m 0755 "${tools_dir}/minikube" /usr/local/bin/minikube
+rm -f "${tools_dir}/kubectl" "${tools_dir}/kubectl.sha256" \
+  "${tools_dir}/minikube" "${tools_dir}/minikube.sha256"
+rmdir "${tools_dir}"
+docker version
+docker compose version
+kubectl version --client
+minikube version
+```
+
 ## Port and trust
 
 The Web server binds `127.0.0.1:3080` by default. A network-facing deployment must set `DSH_WEB_HOST=0.0.0.0`, `DSH_WEB_PORT=4080`, and `DSH_ALLOW_NON_LOOPBACK=1`; the container entrypoint converts those values to `--host 0.0.0.0 --port 4080 --allow-non-loopback`.

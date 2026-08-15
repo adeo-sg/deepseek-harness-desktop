@@ -4,6 +4,43 @@
 
 本指南将 Web profile 部署到 Docker 或 Kubernetes。npx/本地运行器仍使用默认的 `http://127.0.0.1:3080`；容器部署使用 `4080`，因此两种模式可以在同一台机器上运行而不会端口冲突。
 
+## Ubuntu 22.04 与 WSL 2 前置条件
+
+以下命令需要 `amd64` 或 `arm64` 宿主机上的 Docker Engine、Compose 插件、`kubectl` 和 Minikube。请按照 [Ubuntu Docker Engine 指南](https://docs.docker.com/engine/install/ubuntu/)安装 Docker，或启用 Docker Desktop 的 WSL 集成，然后安装 Kubernetes 客户端，并在 clone 仓库前确认每条命令都可运行。
+
+```sh
+case "$(uname -m)" in
+  x86_64|amd64) arch=amd64 ;;
+  aarch64|arm64) arch=arm64 ;;
+  *) echo 'unsupported container architecture' >&2; exit 1 ;;
+esac
+tools_dir="$(mktemp -d)"
+kubectl_version="$(curl --fail --show-error --silent --location https://dl.k8s.io/release/stable.txt)"
+curl --fail --show-error --location \
+  "https://dl.k8s.io/release/${kubectl_version}/bin/linux/${arch}/kubectl" \
+  --output "${tools_dir}/kubectl"
+curl --fail --show-error --location \
+  "https://dl.k8s.io/release/${kubectl_version}/bin/linux/${arch}/kubectl.sha256" \
+  --output "${tools_dir}/kubectl.sha256"
+curl --fail --show-error --location \
+  "https://storage.googleapis.com/minikube/releases/latest/minikube-linux-${arch}" \
+  --output "${tools_dir}/minikube"
+curl --fail --show-error --location \
+  "https://storage.googleapis.com/minikube/releases/latest/minikube-linux-${arch}.sha256" \
+  --output "${tools_dir}/minikube.sha256"
+(cd "${tools_dir}" && printf '%s  kubectl\n' "$(cat kubectl.sha256)" | sha256sum --check)
+(cd "${tools_dir}" && printf '%s  minikube\n' "$(cat minikube.sha256)" | sha256sum --check)
+sudo install -m 0755 "${tools_dir}/kubectl" /usr/local/bin/kubectl
+sudo install -m 0755 "${tools_dir}/minikube" /usr/local/bin/minikube
+rm -f "${tools_dir}/kubectl" "${tools_dir}/kubectl.sha256" \
+  "${tools_dir}/minikube" "${tools_dir}/minikube.sha256"
+rmdir "${tools_dir}"
+docker version
+docker compose version
+kubectl version --client
+minikube version
+```
+
 ## 端口与信任
 
 Web 服务器默认绑定 `127.0.0.1:3080`。对外网络部署必须设置 `DSH_WEB_HOST=0.0.0.0`、`DSH_WEB_PORT=4080` 和 `DSH_ALLOW_NON_LOOPBACK=1`；容器入口会将它们转换成 `--host 0.0.0.0 --port 4080 --allow-non-loopback`。
