@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dsh
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: dsh
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 4080
+  egress:
+    # DNS labels differ between Kubernetes distributions, so DNS is allowed
+    # by port while the cluster's egress controller applies any IP policy.
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443

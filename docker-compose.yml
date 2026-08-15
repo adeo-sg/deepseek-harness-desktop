@@ -1,0 +1,45 @@
+services:
+  dsh:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${DSH_IMAGE:-ghcr.io/sdkwork-ai/deepseek-harness:local}
+    restart: unless-stopped
+    ports:
+      # Keep the unauthenticated direct listener on loopback. A reverse proxy
+      # on the Compose network can reach the service without publishing it.
+      - "${DSH_PUBLISH_HOST:-127.0.0.1}:${DSH_PUBLISH_PORT:-4080}:4080"
+    environment:
+      # Null mapping values pass a host/.env value when present and omit the
+      # variable otherwise, preserving the provider's public-endpoint default.
+      DEEPSEEK_API_KEY:
+      DEEPSEEK_BASE_URL:
+      DEEPSEEK_SEARCH_BASE_URL:
+      DSH_HOME: /data
+      DSH_WEB_HOST: 0.0.0.0
+      DSH_WEB_PORT: "4080"
+      DSH_ALLOW_NON_LOOPBACK: "1"
+      # Comma-separated browser Host authorities, for example app.example.com.
+      DSH_TRUSTED_HOSTS: ${DSH_TRUSTED_HOSTS:-localhost,127.0.0.1}
+      DSH_TELEMETRY_DISABLED: "1"
+      DSH_PERMISSION_MODE: workspace-write
+    volumes:
+      - dsh-data:/data
+      - dsh-workspace:/workspace
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:4080/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  dsh-data:
+  dsh-workspace:
