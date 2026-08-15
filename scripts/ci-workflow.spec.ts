@@ -356,6 +356,8 @@ describe('Desktop release workflow', () => {
       with: { draft: true, make_latest: false },
     })
     expect(publish.run).toContain('[.name, .size, .id, .digest]')
+    expect(publish.run).toContain('releases?per_page=100')
+    expect(publish.run).not.toContain('/releases/tags/')
     expect(publish.run).toContain("expected_digest=\"$(awk -v name=\"$name\" '$2 == name { print $1 }' release-assets/SHA256SUMS)\"")
     expect(publish.run).toContain('test "$remote_digest" = "sha256:${expected_digest}"')
     expect(publish.run).toContain('cmp "release-assets/${metadata}" "$downloaded"')

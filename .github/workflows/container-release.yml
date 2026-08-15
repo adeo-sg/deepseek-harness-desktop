@@ -328,7 +328,9 @@ jobs:
           actual="$(mktemp)"
           remote="$(mktemp)"
           find release-assets -maxdepth 1 -type f -printf '%f\n' | sort > "$expected"
-          release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" --jq '.id')"
+          release_id="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq '.[] | select(.tag_name == env.GITHUB_REF_NAME) | .id')"
+          test -n "$release_id" && [[ "$release_id" != *$'\n'* ]]
           release_draft="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" --jq '.draft')"
           gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
             --jq '.assets[] | [.name, .size, .id, .digest] | @tsv' | sort > "$remote"
