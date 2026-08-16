@@ -54,6 +54,23 @@ pnpm dsh web
 - Add the [`dsh-plugin`](https://github.com/topics/dsh-plugin) topic to your plugin repository for discoverability.
 - Join <a href="https://discord.gg/Ycq5dCaS4">DeepSeek Harness Discord community</a>.
 
+Scan the QR codes to follow the DeepSeek Harness WeChat Official Account and join the WeChat community group.
+
+<table>
+  <thead>
+    <tr>
+      <th align="center">WeChat Official Account</th>
+      <th align="center">WeChat Group</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center"><img src="assets/community-wechat-official-account.png" alt="DeepSeek Harness WeChat Official Account QR code" width="180" height="180"></td>
+      <td align="center"><img src="assets/community-group.png" alt="DeepSeek Harness WeChat Group QR code" width="180" height="180"></td>
+    </tr>
+  </tbody>
+</table>
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
