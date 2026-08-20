@@ -26,8 +26,8 @@ services:
       DSH_TELEMETRY_DISABLED: "1"
       DSH_PERMISSION_MODE: workspace-write
     volumes:
-      - dsh-data:/data
-      - dsh-workspace:/workspace
+      - ${DSH_DATA_PATH:-./data}:/data
+      - ${DSH_WORKSPACE_PATH:-./workspace}:/workspace
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=256m
     security_opt:
@@ -41,6 +41,6 @@ services:
       start_period: 20s
       retries: 3
 
-volumes:
-  dsh-data:
-  dsh-workspace:
+#volumes:
+#  dsh-data:
+#  dsh-workspace:
