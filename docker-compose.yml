@@ -6,8 +6,6 @@ services:
       dockerfile: Dockerfile
     image: ${DSH_IMAGE:-localhost/deepseek-harness:local}
     restart: unless-stopped
-    labels:
-
     ports:
       # Keep the unauthenticated direct listener on loopback. A reverse proxy
       # on the Compose network can reach the service without publishing it.
