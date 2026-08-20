@@ -1,5 +1,6 @@
 services:
   dsh:
+    user: "1000:1000"  # UID:GID de votre utilisateur sur l'hôte
     build:
       context: .
       dockerfile: Dockerfile
