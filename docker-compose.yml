@@ -28,7 +28,7 @@ services:
       DSH_PERMISSION_MODE: workspace-write
     volumes:
       - ${DSH_DATA_PATH:-./data}:/data
-      - ${DSH_WORKSPACE_PATH:-./workspace}:/workspace
+      - ${DSH_WORKSPACE_PATH:-./workspace}:/home/node
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=256m
     security_opt:
